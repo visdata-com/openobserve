@@ -1007,7 +1007,7 @@ pub(crate) async fn check_permissions(
     .await
 }
 
-#[cfg(not(feature = "enterprise"))]
+#[cfg(all(not(feature = "enterprise"), not(feature = "visdata")))]
 pub(crate) async fn check_permissions(
     _user_id: &str,
     _auth_info: AuthExtractor,
@@ -1015,6 +1015,56 @@ pub(crate) async fn check_permissions(
     _is_external: bool,
 ) -> bool {
     true
+}
+
+#[cfg(feature = "visdata")]
+pub(crate) async fn check_permissions(
+    user_id: &str,
+    auth_info: AuthExtractor,
+    role: UserRole,
+    _is_external: bool,
+) -> bool {
+    // Root user bypasses all permission checks
+    if role.eq(&UserRole::Root) {
+        return true;
+    }
+
+    // Check if visdata is initialized
+    if !visdata::is_initialized() {
+        log::warn!("[VISDATA] Module not initialized, allowing access");
+        return true;
+    }
+
+    // Build object string for permission check
+    let object = auth_info.o2_type;
+
+    // Convert HTTP method to permission type
+    let permission = match auth_info.method.as_str() {
+        "GET" => {
+            if object.contains("_all_") {
+                "AllowList"
+            } else {
+                "AllowGet"
+            }
+        }
+        "POST" => "AllowPost",
+        "PUT" | "PATCH" => "AllowPut",
+        "DELETE" => "AllowDelete",
+        _ => "AllowGet",
+    };
+
+    // Check permission using visdata RBAC engine
+    match visdata::Visdata::global()
+        .rbac()
+        .check_permission(&auth_info.org_id, user_id, &object, permission)
+        .await
+    {
+        Ok(allowed) => allowed,
+        Err(e) => {
+            log::error!("[VISDATA] Permission check error: {}", e);
+            false
+        }
+    }
 }
 
 #[cfg(feature = "enterprise")]

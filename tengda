@@ -1,0 +1,30 @@
+1. 构建项目
+解决你的protobuf问题后:
+# 设置C11标准
+$env:AWS_LC_SYS_C_STD = "c11"
+
+# 安装protobuf后设置路径
+$env:PROTOC = "C:\protoc\bin\protoc.exe"
+$env:PROTOC_INCLUDE = "C:\protoc\include"
+
+# 构建
+cargo build --release
+2. 运行开发服务器
+# 设置root用户
+$env:ZO_ROOT_USER_EMAIL = "admin@example.com"
+$env:ZO_ROOT_USER_PASSWORD = "Admin@123"
+
+# 运行
+cargo run
+3. 数据库配置
+# 使用MySQL
+$env:ZO_META_STORE = "mysql"
+$env:ZO_META_MYSQL_DSN = "mysql://user:pass@localhost/openobserve"
+
+# 使用PostgreSQL
+$env:ZO_META_STORE = "postgres"
+$env:ZO_META_POSTGRES_DSN = "postgres://user:pass@localhost/openobserve"
+
+
+
+前端需要 后端返回 rbac_enabled: true 才会显示 Groups 和 Roles 标签页！ 让我检查后端配置

@@ -25,6 +25,7 @@ publish = false
 default = []
 enterprise = []
 cloud = []
+visdata = ["dep:visdata", "infra/visdata"]
 mimalloc = ["dep:mimalloc"]
 jemalloc = ["dep:tikv-jemallocator"]
 profiling = ["dep:pprof"]
@@ -192,6 +193,7 @@ tokio-rustls.workspace = true
 roaring.workspace = true
 flight.workspace = true
 async-stream.workspace = true
+visdata = { workspace = true, optional = true }
 
 [dev-dependencies]
 async-walkdir.workspace = true
@@ -209,6 +211,7 @@ members = [
     "src/proto",
     "src/report_server",
     "src/flight",
+    "crates/visdata",
 ]
 resolver = "2"
 
@@ -225,6 +228,7 @@ wal = { path = "src/wal" }
 proto = { path = "src/proto" }
 report_server = { path = "src/report_server" }
 flight = { path = "src/flight" }
+visdata = { path = "crates/visdata" }
 aes-siv = "0.7.0"
 ahash = { version = "0.8", features = ["serde"] }
 actix-web = { version = "4.12", features = ["rustls-0_23"] }

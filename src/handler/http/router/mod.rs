@@ -43,6 +43,9 @@ use {
     },
 };
 
+#[cfg(feature = "visdata")]
+use visdata;
+
 use super::request::*;
 use crate::{
     common::meta::{middleware_data::RumExtraData, proxy::PathParamProxyURL},
@@ -397,8 +400,13 @@ pub fn get_service_routes(svc: &mut web::ServiceConfig) {
         .service(users::update)
         .service(users::add_user_to_org)
         .service(users::list_invitations)
-        .service(users::decline_invitation)
-        .service(users::list_roles)
+        .service(users::decline_invitation);
+
+    // When visdata is enabled, use visdata's role endpoints instead of original
+    #[cfg(not(feature = "visdata"))]
+    let service = service.service(users::list_roles);
+
+    let service = service
         .service(organization::org::organizations)
         .service(organization::settings::get)
         .service(organization::settings::create)
@@ -550,21 +558,7 @@ pub fn get_service_routes(svc: &mut web::ServiceConfig) {
         .service(logs::ingest::handle_kinesis_request)
         .service(logs::ingest::handle_gcp_request)
         .service(organization::org::create_org)
-        .service(authz::fga::create_role)
         .service(organization::org::rename_org)
-        .service(authz::fga::get_roles)
-        .service(authz::fga::update_role)
-        .service(authz::fga::get_role_permissions)
-        .service(authz::fga::create_group)
-        .service(authz::fga::update_group)
-        .service(authz::fga::get_groups)
-        .service(authz::fga::get_group_details)
-        .service(authz::fga::get_resources)
-        .service(authz::fga::get_users_with_role)
-        .service(authz::fga::get_roles_for_user)
-        .service(authz::fga::get_groups_for_user)
-        .service(authz::fga::delete_role)
-        .service(authz::fga::delete_group)
         .service(clusters::list_clusters)
         .service(pipeline::save_pipeline)
         .service(pipeline::update_pipeline)
@@ -588,6 +582,56 @@ pub fn get_service_routes(svc: &mut web::ServiceConfig) {
         .service(service_accounts::get_api_token)
         .service(mcp::handle_mcp_post)
         .service(mcp::handle_mcp_get);
+
+    // VisData RBAC and SSO (replaces enterprise FGA when visdata feature is enabled)
+    #[cfg(feature = "visdata")]
+    let service = service
+        // Role management
+        .service(visdata::handler::create_role)
+        .service(visdata::handler::list_roles)
+        .service(visdata::handler::update_role)
+        .service(visdata::handler::delete_role)
+        .service(visdata::handler::get_role_permissions)
+        .service(visdata::handler::get_role_users)
+        // Group management
+        .service(visdata::handler::create_group)
+        .service(visdata::handler::list_groups)
+        .service(visdata::handler::get_group)
+        .service(visdata::handler::update_group)
+        .service(visdata::handler::delete_group)
+        // User queries - system roles (is_system=true) and custom roles (is_system=false)
+        .service(visdata::handler::list_system_roles)
+        .service(visdata::handler::list_custom_roles)
+        .service(visdata::handler::get_user_roles)
+        .service(visdata::handler::get_user_groups)
+        // Resources
+        .service(visdata::handler::get_resources)
+        // SSO
+        .service(visdata::handler::list_providers)
+        .service(visdata::handler::create_oidc_provider)
+        .service(visdata::handler::create_ldap_provider)
+        .service(visdata::handler::update_provider)
+        .service(visdata::handler::delete_provider)
+        .service(visdata::handler::sso_login)
+        .service(visdata::handler::sso_callback);
+
+    // Default RBAC (authz::fga) when visdata is not enabled
+    #[cfg(not(feature = "visdata"))]
+    let service = service
+        .service(authz::fga::create_role)
+        .service(authz::fga::get_roles)
+        .service(authz::fga::update_role)
+        .service(authz::fga::get_role_permissions)
+        .service(authz::fga::create_group)
+        .service(authz::fga::update_group)
+        .service(authz::fga::get_groups)
+        .service(authz::fga::get_group_details)
+        .service(authz::fga::get_resources)
+        .service(authz::fga::get_users_with_role)
+        .service(authz::fga::get_roles_for_user)
+        .service(authz::fga::get_groups_for_user)
+        .service(authz::fga::delete_role)
+        .service(authz::fga::delete_group);
 
     #[cfg(feature = "enterprise")]
     let service = service

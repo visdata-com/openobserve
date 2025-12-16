@@ -1,0 +1,62 @@
+[package]
+name = "visdata"
+version.workspace = true
+edition.workspace = true
+description = "VisData Enterprise SSO and RBAC module for OpenObserve"
+license.workspace = true
+
+[dependencies]
+# SSO - OIDC
+openidconnect = "3.5"
+oauth2 = "4.4"
+jsonwebtoken = "9.3"
+
+# SSO - LDAP
+ldap3 = "0.11"
+
+# Database (use workspace)
+sea-orm.workspace = true
+
+# Web framework (use workspace)
+actix-web.workspace = true
+actix-web-httpauth = "0.8"
+
+# Cache
+dashmap.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Async
+async-trait.workspace = true
+tokio.workspace = true
+futures.workspace = true
+
+# Time
+chrono.workspace = true
+
+# ID generation
+uuid = { version = "1.18", features = ["v4"] }
+svix-ksuid.workspace = true
+
+# Error handling
+thiserror.workspace = true
+anyhow.workspace = true
+
+# Logging
+tracing.workspace = true
+
+# Encryption for sensitive config
+aes-gcm = "0.10"
+base64.workspace = true
+rand.workspace = true
+
+# URL handling
+url.workspace = true
+
+# HTTP client
+reqwest.workspace = true
+
+# Internal dependencies
+infra.workspace = true

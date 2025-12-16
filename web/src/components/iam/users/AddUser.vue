@@ -318,6 +318,7 @@ const defaultValue: any = () => {
   return {
     org_member_id: "",
     role: "admin",
+    custom_role: [], // Custom roles (multi-select)
     first_name: "",
     last_name: "",
     email: "",
@@ -457,7 +458,8 @@ export default defineComponent({
       this.formData = { ...this.modelValue };
       this.formData.change_password = false;
       this.formData.password = "";
-      if (config.isEnterprise == "true" || config.isCloud == true) {
+      // Fetch user roles for enterprise, cloud, or when custom roles are available (visdata)
+      if (config.isEnterprise == "true" || config.isCloud == true || this.customRoles.length > 0) {
         this.fetchUserRoles(this.modelValue.email);
       }
     }

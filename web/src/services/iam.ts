@@ -46,6 +46,12 @@ export const getRoles = (org_identifier: string) => {
   return http().get(url);
 };
 
+// Get custom roles (is_system=false) for user assignment dropdown
+export const getCustomRoles = (org_identifier: string) => {
+  const url = `/api/${org_identifier}/users/custom_roles`;
+  return http().get(url);
+};
+
 export const getRole = (role_id: string, org_identifier: string) => {
   const url = `/api/${org_identifier}/roles/${role_id}`;
   return http().get(url);

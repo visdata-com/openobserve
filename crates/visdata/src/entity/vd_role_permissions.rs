@@ -1,0 +1,44 @@
+// Copyright 2025 VisData Inc.
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+
+//! Role permission entity
+
+use sea_orm::entity::prelude::*;
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "vd_role_permissions")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: String,
+    pub role_id: String,
+    pub org_id: String,
+    /// Object in format "resource:entity", e.g., "logs:_all_org123" or "dashboard:folder1/dash1"
+    pub object: String,
+    /// Permission type: AllowAll, AllowList, AllowGet, AllowPost, AllowPut, AllowDelete
+    pub permission: String,
+    pub created_at: i64,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::vd_roles::Entity",
+        from = "Column::RoleId",
+        to = "super::vd_roles::Column::Id",
+        on_delete = "Cascade"
+    )]
+    Role,
+}
+
+impl Related<super::vd_roles::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Role.def()
+    }
+}
+
+impl ActiveModelBehavior for ActiveModel {}

@@ -307,6 +307,13 @@ async fn main() -> Result<(), anyhow::Error> {
                 panic!("enterprise init failed: {e}");
             }
 
+            // init visdata (SSO & RBAC)
+            #[cfg(feature = "visdata")]
+            if let Err(e) = crate::init_visdata().await {
+                job_init_tx.send(false).ok();
+                panic!("visdata init failed: {e}");
+            }
+
             // ingester init
             if let Err(e) = ingester::init().await {
                 job_init_tx.send(false).ok();
@@ -1486,6 +1493,27 @@ async fn init_enterprise() -> Result<(), anyhow::Error> {
             .await?;
     }
 
+    Ok(())
+}
+
+/// Initializes VisData (SSO & RBAC) module.
+#[cfg(feature = "visdata")]
+async fn init_visdata() -> Result<(), anyhow::Error> {
+    use std::sync::Arc;
+
+    log::info!("Initializing VisData (SSO & RBAC) module...");
+
+    // Get the database connection
+    let db = infra::db::connect_to_orm().await;
+    let db = Arc::new(db);
+
+    // Create default config
+    let config = visdata::VisdataConfig::default();
+
+    // Initialize VisData
+    visdata::Visdata::init(db, config).await?;
+
+    log::info!("VisData module initialized successfully");
     Ok(())
 }
 

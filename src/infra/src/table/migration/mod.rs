@@ -76,13 +76,16 @@ mod m20251118_000002_create_sessions_table;
 mod m20251118_000003_delete_meta_sessions;
 mod m20251126_100001_create_service_streams_table;
 mod m20251126_100002_create_service_streams_dimensions_table;
+#[cfg(feature = "visdata")]
+mod m20251214_000001_create_visdata_tables;
 
 pub struct Migrator;
 
 #[async_trait::async_trait]
 impl MigratorTrait for Migrator {
+    #[allow(unused_mut)]
     fn migrations() -> Vec<Box<dyn MigrationTrait>> {
-        vec![
+        let mut migrations: Vec<Box<dyn MigrationTrait>> = vec![
             Box::new(m20241114_000001_create_folders_table::Migration),
             Box::new(m20241115_150000_populate_folders_table::Migration),
             Box::new(m20241116_000001_delete_metas::Migration),
@@ -141,7 +144,15 @@ impl MigratorTrait for Migrator {
             Box::new(m20251118_000003_delete_meta_sessions::Migration),
             Box::new(m20251126_100001_create_service_streams_table::Migration),
             Box::new(m20251126_100002_create_service_streams_dimensions_table::Migration),
-        ]
+        ];
+
+        // Add visdata migrations when feature is enabled
+        #[cfg(feature = "visdata")]
+        {
+            migrations.push(Box::new(m20251214_000001_create_visdata_tables::Migration));
+        }
+
+        migrations
     }
 }
 

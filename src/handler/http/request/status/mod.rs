@@ -259,7 +259,9 @@ pub async fn zo_config() -> Result<HttpResponse, Error> {
 
     #[cfg(feature = "enterprise")]
     let rbac_enabled = openfga_cfg.enabled;
-    #[cfg(not(feature = "enterprise"))]
+    #[cfg(all(not(feature = "enterprise"), feature = "visdata"))]
+    let rbac_enabled = true; // visdata provides its own RBAC
+    #[cfg(all(not(feature = "enterprise"), not(feature = "visdata")))]
     let rbac_enabled = false;
 
     #[cfg(feature = "enterprise")]
