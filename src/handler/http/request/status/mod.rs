@@ -65,6 +65,9 @@ use {
     },
 };
 
+#[cfg(feature = "visdata")]
+use visdata::Visdata;
+
 use crate::{
     common::{
         infra::cluster,
@@ -248,18 +251,30 @@ pub async fn zo_config() -> Result<HttpResponse, Error> {
     let dex_cfg = get_dex_config();
     #[cfg(feature = "enterprise")]
     let openfga_cfg = get_openfga_config();
+    // SSO enabled - enterprise uses Dex config, visdata checks if initialized
     #[cfg(feature = "enterprise")]
     let sso_enabled = dex_cfg.dex_enabled;
-    #[cfg(not(feature = "enterprise"))]
+    #[cfg(all(feature = "visdata", not(feature = "enterprise")))]
+    let sso_enabled = Visdata::try_global().is_some();  // SSO enabled if visdata is initialized
+    #[cfg(not(any(feature = "enterprise", feature = "visdata")))]
     let sso_enabled = false;
+
+    // Native login enabled
     #[cfg(feature = "enterprise")]
     let native_login_enabled = dex_cfg.native_login_enabled;
-    #[cfg(not(feature = "enterprise"))]
+    #[cfg(all(feature = "visdata", not(feature = "enterprise")))]
+    let native_login_enabled = true;  // visdata always allows native login
+    #[cfg(not(any(feature = "enterprise", feature = "visdata")))]
     let native_login_enabled = true;
 
+    // RBAC enabled - enterprise uses OpenFGA config, visdata uses VisdataConfig
     #[cfg(feature = "enterprise")]
     let rbac_enabled = openfga_cfg.enabled;
-    #[cfg(not(feature = "enterprise"))]
+    #[cfg(all(feature = "visdata", not(feature = "enterprise")))]
+    let rbac_enabled = Visdata::try_global()
+        .map(|v| v.openfga_config().enabled)
+        .unwrap_or(false);
+    #[cfg(not(any(feature = "enterprise", feature = "visdata")))]
     let rbac_enabled = false;
 
     #[cfg(feature = "enterprise")]
@@ -325,11 +340,13 @@ pub async fn zo_config() -> Result<HttpResponse, Error> {
     #[cfg(not(feature = "enterprise"))]
     let service_streams_enabled = false;
 
-    #[cfg(all(feature = "cloud", not(feature = "enterprise")))]
+    #[cfg(all(feature = "cloud", not(any(feature = "enterprise", feature = "visdata"))))]
     let build_type = "cloud";
     #[cfg(feature = "enterprise")]
     let build_type = "enterprise";
-    #[cfg(not(any(feature = "cloud", feature = "enterprise")))]
+    #[cfg(all(feature = "visdata", not(feature = "enterprise")))]
+    let build_type = "enterprise";  // visdata also reports as enterprise for frontend compatibility
+    #[cfg(not(any(feature = "cloud", feature = "enterprise", feature = "visdata")))]
     let build_type = "opensource";
 
     #[cfg(feature = "enterprise")]

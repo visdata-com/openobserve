@@ -307,6 +307,13 @@ async fn main() -> Result<(), anyhow::Error> {
                 panic!("enterprise init failed: {e}");
             }
 
+            // init visdata (OpenFGA + Dex)
+            #[cfg(feature = "visdata")]
+            if let Err(e) = crate::init_visdata().await {
+                job_init_tx.send(false).ok();
+                panic!("visdata init failed: {e}");
+            }
+
             // ingester init
             if let Err(e) = ingester::init().await {
                 job_init_tx.send(false).ok();
@@ -818,6 +825,8 @@ async fn init_http_server() -> Result<(), anyhow::Error> {
                     .configure(get_proxy_routes);
                 #[cfg(feature = "enterprise")]
                 let scope = scope.configure(get_script_server_routes);
+                #[cfg(feature = "visdata")]
+                let scope = scope.configure(get_visdata_routes);
                 scope
             })
         }
@@ -922,6 +931,8 @@ async fn init_http_server_without_tracing() -> Result<(), anyhow::Error> {
                     .configure(get_proxy_routes);
                 #[cfg(feature = "enterprise")]
                 let scope = scope.configure(get_script_server_routes);
+                #[cfg(feature = "visdata")]
+                let scope = scope.configure(get_visdata_routes);
                 scope
             })
         }
@@ -1506,6 +1517,60 @@ fn check_ratelimit_config(cfg: &Config, o2cfg: &O2Config) -> Result<(), anyhow::
             "ratelimit rules refresh interval must be greater than or equal to 2 seconds"
         ));
     }
+    Ok(())
+}
+
+/// Initializes visdata enterprise features (OpenFGA + Dex)
+#[cfg(feature = "visdata")]
+async fn init_visdata() -> Result<(), anyhow::Error> {
+    use visdata::VisdataConfig;
+
+    let cfg = config::get_config();
+
+    // Build visdata config from environment variables
+    let visdata_config = VisdataConfig {
+        // Feature flags
+        rbac_enabled: std::env::var("VISDATA_RBAC_ENABLED")
+            .map(|v| v.to_lowercase() == "true")
+            .unwrap_or(true),
+        sso_enabled: std::env::var("VISDATA_SSO_ENABLED")
+            .map(|v| v.to_lowercase() == "true")
+            .unwrap_or(true),
+        encryption_key: std::env::var("VISDATA_ENCRYPTION_KEY").ok(),
+
+        // OpenFGA configuration
+        openfga_url: std::env::var("VISDATA_OPENFGA_URL")
+            .unwrap_or_else(|_| "http://localhost:8080".to_string()),
+        openfga_store_name: std::env::var("VISDATA_OPENFGA_STORE")
+            .unwrap_or_else(|_| "openobserve".to_string()),
+
+        // Dex configuration
+        dex_grpc_url: std::env::var("VISDATA_DEX_GRPC_URL")
+            .unwrap_or_else(|_| "http://localhost:5557".to_string()),
+        dex_issuer_url: std::env::var("VISDATA_DEX_ISSUER_URL")
+            .unwrap_or_else(|_| "http://localhost:5556".to_string()),
+        dex_client_id: std::env::var("VISDATA_DEX_CLIENT_ID")
+            .unwrap_or_else(|_| "openobserve".to_string()),
+        dex_client_secret: std::env::var("VISDATA_DEX_CLIENT_SECRET")
+            .unwrap_or_else(|_| "".to_string()),
+        dex_redirect_uri: std::env::var("VISDATA_DEX_REDIRECT_URI")
+            .unwrap_or_else(|_| format!("{}/auth/callback", cfg.common.web_url)),
+
+        // Cache configuration (use defaults)
+        cache: visdata::config::CacheConfig::default(),
+    };
+
+    log::info!(
+        "Initializing visdata with OpenFGA at {} and Dex at {}",
+        visdata_config.openfga_url,
+        visdata_config.dex_issuer_url
+    );
+
+    visdata::Visdata::init_enterprise(visdata_config)
+        .await
+        .map_err(|e| anyhow::anyhow!("visdata init failed: {}", e))?;
+
+    log::info!("Visdata enterprise module initialized successfully");
     Ok(())
 }
 

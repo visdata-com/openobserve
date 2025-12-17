@@ -953,7 +953,59 @@ pub async fn validate_http_internal(
     Ok(req)
 }
 
-#[cfg(feature = "enterprise")]
+/// Permission check using visdata OpenFGA integration
+#[cfg(feature = "visdata")]
+pub(crate) async fn check_permissions(
+    user_id: &str,
+    auth_info: AuthExtractor,
+    role: UserRole,
+    _is_external: bool,
+) -> bool {
+    use crate::common::infra::config::ORG_USERS;
+
+    let object_str = auth_info.o2_type;
+    log::debug!("[visdata] Role of user {user_id} is {role:#?}");
+    let obj_str = if object_str.contains("##user_id##") {
+        object_str.replace("##user_id##", user_id)
+    } else {
+        object_str
+    };
+    let role_str = if role.eq(&UserRole::Root) {
+        // root user should have access to everything, bypass check in openfga
+        return true;
+    } else if auth_info.org_id.eq("organizations") && auth_info.method.eq("POST") {
+        match ORG_USERS.get(&format!("{}/{user_id}", config::META_ORG_ID)) {
+            Some(user) => format!("{}", user.role),
+            None => "".to_string(),
+        }
+    } else {
+        format!("{role}")
+    };
+    let org_id = if auth_info.org_id.eq("organizations") {
+        if auth_info.method.eq("POST") {
+            // The user is trying to create a new organization
+            // Use the usage org to check for permission
+            config::META_ORG_ID
+        } else {
+            user_id
+        }
+    } else {
+        &auth_info.org_id
+    };
+
+    // Use visdata's OpenFGA-based permission check
+    visdata::rbac_fga::service::checker::check_permissions(
+        user_id,
+        org_id,
+        &auth_info.method,
+        &obj_str,
+        &role_str,
+    )
+    .await
+}
+
+/// Permission check using o2_openfga (enterprise version)
+#[cfg(all(feature = "enterprise", not(feature = "visdata")))]
 pub(crate) async fn check_permissions(
     user_id: &str,
     auth_info: AuthExtractor,
@@ -1007,7 +1059,8 @@ pub(crate) async fn check_permissions(
     .await
 }
 
-#[cfg(not(feature = "enterprise"))]
+/// Default permission check (community edition - always allow)
+#[cfg(not(any(feature = "enterprise", feature = "visdata")))]
 pub(crate) async fn check_permissions(
     _user_id: &str,
     _auth_info: AuthExtractor,
@@ -1017,7 +1070,43 @@ pub(crate) async fn check_permissions(
     true
 }
 
-#[cfg(feature = "enterprise")]
+/// List objects using visdata OpenFGA
+#[cfg(feature = "visdata")]
+pub(crate) async fn list_objects_for_user(
+    org_id: &str,
+    user_id: &str,
+    permission: &str,
+    object_type: &str,
+) -> Result<Option<Vec<String>>, Error> {
+    if is_root_user(user_id) {
+        return Ok(None);
+    }
+
+    let role = match users::get_user(Some(org_id), user_id).await {
+        Some(user) => user.role.to_string(),
+        None => "".to_string(),
+    };
+
+    match visdata::rbac_fga::service::checker::list_objects_for_user(
+        org_id, user_id, permission, object_type, &role,
+    )
+    .await
+    {
+        Ok(resp) => {
+            log::debug!(
+                "[visdata] list_objects_for_user for user {user_id} from {org_id} org returns: {resp:#?}"
+            );
+            Ok(resp)
+        }
+        Err(e) => {
+            log::error!("[visdata] list_objects_for_user error: {}", e);
+            Err(ErrorForbidden("Unauthorized Access"))
+        }
+    }
+}
+
+/// List objects using o2_openfga (enterprise version)
+#[cfg(all(feature = "enterprise", not(feature = "visdata")))]
 async fn list_objects(
     user_id: &str,
     permission: &str,
@@ -1029,7 +1118,7 @@ async fn list_objects(
         .await
 }
 
-#[cfg(feature = "enterprise")]
+#[cfg(all(feature = "enterprise", not(feature = "visdata")))]
 pub(crate) async fn list_objects_for_user(
     org_id: &str,
     user_id: &str,
@@ -1054,6 +1143,17 @@ pub(crate) async fn list_objects_for_user(
     } else {
         Ok(None)
     }
+}
+
+/// Default list_objects_for_user (community edition - no filtering)
+#[cfg(not(any(feature = "enterprise", feature = "visdata")))]
+pub(crate) async fn list_objects_for_user(
+    _org_id: &str,
+    _user_id: &str,
+    _permission: &str,
+    _object_type: &str,
+) -> Result<Option<Vec<String>>, Error> {
+    Ok(None)
 }
 
 /// Helper function to extract the relative path after the base URI and path prefix

@@ -5,7 +5,19 @@ edition.workspace = true
 description = "VisData Enterprise SSO and RBAC module for OpenObserve"
 license.workspace = true
 
+[build-dependencies]
+tonic-prost-build = "0.14"
+
 [dependencies]
+# gRPC (Dex)
+tonic.workspace = true
+tonic-prost.workspace = true
+prost.workspace = true
+
+# Lazy static
+once_cell.workspace = true
+hashbrown.workspace = true
+
 # SSO - OIDC
 openidconnect = "3.5"
 oauth2 = "4.4"
@@ -51,9 +63,11 @@ tracing.workspace = true
 aes-gcm = "0.10"
 base64.workspace = true
 rand.workspace = true
+sha2 = "0.10"
 
 # URL handling
 url.workspace = true
+urlencoding = "2.1"
 
 # HTTP client
 reqwest.workspace = true

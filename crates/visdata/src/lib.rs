@@ -8,24 +8,78 @@
 //! VisData Enterprise Module for OpenObserve
 //!
 //! This module provides:
-//! - SSO (Single Sign-On) with OIDC and LDAP support
-//! - RBAC (Role-Based Access Control) with fine-grained permissions
+//! - Auth (Authentication) with Dex integration for SSO
+//! - RBAC (Role-Based Access Control) with OpenFGA integration
+//!
+//! ## Architecture
+//!
+//! ```text
+//! visdata/
+//! ├── auth/           # Authentication module (Dex HTTP client)
+//! │   ├── config      # DexConfig
+//! │   ├── client      # DexClient (HTTP-based)
+//! │   ├── handler     # HTTP handlers (login, SSO, connectors)
+//! │   ├── service     # Token validation, connector management
+//! │   └── types       # Request/Response types
+//! │
+//! ├── rbac/           # Authorization module (OpenFGA)
+//! │   ├── config      # OpenFGAConfig
+//! │   ├── client      # OpenFGAClient (HTTP-based)
+//! │   ├── handler     # HTTP handlers (roles, groups, users, resources)
+//! │   ├── service     # Permission checking, tuple management
+//! │   ├── model       # FGA schema, resource definitions
+//! │   └── types       # Request/Response types
+//! │
+//! ├── common/         # Shared utilities (KSUID generation)
+//! └── config          # VisdataConfig
+//! ```
 
-pub mod config;
-pub mod error;
-pub mod meta;
+// ============================================================================
+// Enterprise Modules (OpenFGA + Dex)
+// ============================================================================
+
+pub mod common;
+pub mod auth;
 pub mod rbac;
-pub mod service;
-pub mod sso;
-pub mod handler;
-pub mod entity;
+pub mod config;
+
+// Re-export rbac as rbac_fga for backward compatibility
+pub use rbac as rbac_fga;
 
 pub use config::VisdataConfig;
-pub use error::{Error, Result};
 
-use sea_orm::DatabaseConnection;
 use std::sync::{Arc, OnceLock};
 use tokio::sync::RwLock;
+
+/// Error types for visdata
+pub mod error {
+    use thiserror::Error;
+
+    #[derive(Debug, Error)]
+    pub enum Error {
+        #[error("Already initialized")]
+        AlreadyInitialized,
+
+        #[error("Not initialized")]
+        NotInitialized,
+
+        #[error("Internal error: {0}")]
+        Internal(String),
+
+        #[error("Configuration error: {0}")]
+        Config(String),
+
+        #[error("OpenFGA error: {0}")]
+        OpenFGA(String),
+
+        #[error("Dex error: {0}")]
+        Dex(String),
+    }
+
+    pub type Result<T> = std::result::Result<T, Error>;
+}
+
+pub use error::{Error, Result};
 
 /// Global VisData instance
 static VISDATA: OnceLock<Visdata> = OnceLock::new();
@@ -35,55 +89,71 @@ static SHUTDOWN_TX: OnceLock<tokio::sync::watch::Sender<bool>> = OnceLock::new()
 
 /// Main VisData module instance
 pub struct Visdata {
-    db: Arc<DatabaseConnection>,
-    rbac_engine: Arc<rbac::RBACEngine>,
+    /// OpenFGA client for authorization
+    openfga: Arc<rbac::OpenFGAClient>,
+    /// Dex client for authentication
+    dex: Arc<RwLock<auth::DexClient>>,
+    /// Dex configuration
+    dex_config: auth::DexConfig,
+    /// OpenFGA configuration
+    openfga_config: rbac::OpenFGAConfig,
+    /// Main configuration
     config: Arc<RwLock<VisdataConfig>>,
-    /// Handle to the cache cleaner task
-    #[allow(dead_code)]
-    cache_cleaner_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl Visdata {
-    /// Initialize the VisData module
-    pub async fn init(db: Arc<DatabaseConnection>, config: VisdataConfig) -> Result<()> {
-        let rbac_engine = rbac::RBACEngine::new(db.clone()).await?;
-        let rbac_engine = Arc::new(rbac_engine);
+    /// Initialize the VisData module with enterprise config (OpenFGA + Dex)
+    ///
+    /// # Arguments
+    /// * `config` - Configuration containing OpenFGA and Dex settings
+    ///
+    /// # Environment Variables
+    /// - `VISDATA_OPENFGA_URL` - OpenFGA HTTP API URL (default: http://localhost:8080)
+    /// - `VISDATA_OPENFGA_STORE` - OpenFGA store name (default: openobserve)
+    /// - `VISDATA_DEX_GRPC_URL` - Dex gRPC URL (default: http://localhost:5557)
+    /// - `VISDATA_DEX_ISSUER_URL` - Dex OIDC issuer URL (default: http://localhost:5556)
+    /// - `VISDATA_DEX_CLIENT_ID` - OAuth2 client ID (default: openobserve)
+    /// - `VISDATA_DEX_CLIENT_SECRET` - OAuth2 client secret
+    /// - `VISDATA_DEX_REDIRECT_URI` - OAuth2 redirect URI
+    pub async fn init_enterprise(config: VisdataConfig) -> Result<()> {
+        // Initialize OpenFGA client
+        let openfga_config = rbac::OpenFGAConfig::default()
+            .with_api_url(&config.openfga_url)
+            .with_store_name(&config.openfga_store_name);
 
-        // Set up shutdown channel for background tasks
-        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+        let openfga = rbac::OpenFGAClient::new(&openfga_config)
+            .await
+            .map_err(|e| Error::OpenFGA(format!("OpenFGA init failed: {}", e)))?;
+
+        // Initialize Dex client
+        let dex_config = auth::DexConfig::new(&config.dex_grpc_url)
+            .with_issuer(&config.dex_issuer_url)
+            .with_client(&config.dex_client_id, &config.dex_client_secret)
+            .with_redirect_uri(&config.dex_redirect_uri);
+
+        let dex = auth::DexClient::new(&dex_config)
+            .await
+            .map_err(|e| Error::Dex(format!("Dex init failed: {}", e)))?;
+
+        // Set up shutdown channel
+        let (shutdown_tx, _shutdown_rx) = tokio::sync::watch::channel(false);
         SHUTDOWN_TX
             .set(shutdown_tx)
             .map_err(|_| Error::AlreadyInitialized)?;
 
-        // Start cache cleaner if caching is enabled
-        let cache_cleaner_handle = if config.cache.enabled {
-            let cleaner = rbac::CacheCleaner::new(
-                rbac_engine.cache().clone(),
-                config.cache.ttl_seconds / 2, // Clean at half the TTL interval
-                shutdown_rx,
-            );
-            Some(cleaner.start())
-        } else {
-            None
-        };
-
         let instance = Visdata {
-            db,
-            rbac_engine,
+            openfga: Arc::new(openfga),
+            dex: Arc::new(RwLock::new(dex)),
+            dex_config,
+            openfga_config,
             config: Arc::new(RwLock::new(config)),
-            cache_cleaner_handle,
         };
 
         VISDATA
             .set(instance)
             .map_err(|_| Error::AlreadyInitialized)?;
 
-        // Initialize default roles for all existing organizations
-        if let Err(e) = service::init::init_all_orgs().await {
-            tracing::warn!("[VISDATA] Failed to initialize default roles: {}", e);
-        }
-
-        tracing::info!("[VISDATA] Module initialized successfully");
+        tracing::info!("[VISDATA] Enterprise module initialized (OpenFGA + Dex)");
         Ok(())
     }
 
@@ -96,18 +166,38 @@ impl Visdata {
     }
 
     /// Get the global VisData instance
+    ///
+    /// # Panics
+    /// Panics if VisData has not been initialized via `init_enterprise()`
     pub fn global() -> &'static Visdata {
-        VISDATA.get().expect("VisData not initialized. Call Visdata::init() first")
+        VISDATA.get().expect("VisData not initialized. Call Visdata::init_enterprise() first")
     }
 
-    /// Get the RBAC engine
-    pub fn rbac(&self) -> &rbac::RBACEngine {
-        &self.rbac_engine
+    /// Try to get the global VisData instance
+    ///
+    /// Returns `None` if VisData has not been initialized
+    pub fn try_global() -> Option<&'static Visdata> {
+        VISDATA.get()
     }
 
-    /// Get the database connection
-    pub fn db(&self) -> &DatabaseConnection {
-        &self.db
+    /// Get the OpenFGA client
+    pub fn openfga(&self) -> &rbac::OpenFGAClient {
+        &self.openfga
+    }
+
+    /// Get the Dex client
+    pub fn dex(&self) -> &RwLock<auth::DexClient> {
+        &self.dex
+    }
+
+    /// Get the Dex configuration
+    pub fn dex_config(&self) -> &auth::DexConfig {
+        &self.dex_config
+    }
+
+    /// Get the OpenFGA configuration
+    pub fn openfga_config(&self) -> &rbac::OpenFGAConfig {
+        &self.openfga_config
     }
 
     /// Get the configuration

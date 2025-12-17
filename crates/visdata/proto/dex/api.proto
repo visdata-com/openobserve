@@ -1,0 +1,248 @@
+// Dex gRPC API
+// Source: https://github.com/dexidp/dex/blob/master/api/v2/api.proto
+// License: Apache-2.0
+
+syntax = "proto3";
+
+package api;
+
+option java_package = "com.coreos.dex.api";
+option go_package = "github.com/dexidp/dex/api/v2;api";
+
+// Client represents an OAuth2 client.
+message Client {
+    string id = 1;
+    string secret = 2;
+    repeated string redirect_uris = 3;
+    repeated string trusted_peers = 4;
+    bool public = 5;
+    string name = 6;
+    string logo_url = 7;
+}
+
+// CreateClientReq is a request to make a client.
+message CreateClientReq {
+    Client client = 1;
+}
+
+// CreateClientResp returns the response from creating a client.
+message CreateClientResp {
+    bool already_exists = 1;
+    Client client = 2;
+}
+
+// DeleteClientReq is a request to delete a client.
+message DeleteClientReq {
+    // The ID of the client.
+    string id = 1;
+}
+
+// DeleteClientResp determines if the client is deleted successfully.
+message DeleteClientResp {
+    bool not_found = 1;
+}
+
+// UpdateClientReq is a request to update an existing client.
+message UpdateClientReq {
+    string id = 1;
+    repeated string redirect_uris = 2;
+    repeated string trusted_peers = 3;
+    string name = 4;
+    string logo_url = 5;
+}
+
+// UpdateClientResp returns the response from updating a client.
+message UpdateClientResp {
+    bool not_found = 1;
+}
+
+// Password is an email for password mapping managed by the storage.
+message Password {
+    string email = 1;
+    // Currently we do not accept plain text passwords. Could be added in the future.
+    bytes hash = 2;
+    string username = 3;
+    string user_id = 4;
+}
+
+// CreatePasswordReq is a request to make a password.
+message CreatePasswordReq {
+    Password password = 1;
+}
+
+// CreatePasswordResp returns the response from creating a password.
+message CreatePasswordResp {
+    bool already_exists = 1;
+}
+
+// UpdatePasswordReq is a request to modify an existing password.
+message UpdatePasswordReq {
+    // The email used to lookup the password. This field cannot be modified.
+    string email = 1;
+    bytes new_hash = 2;
+    string new_username = 3;
+}
+
+// UpdatePasswordResp returns the response from modifying an existing password.
+message UpdatePasswordResp {
+    bool not_found = 1;
+}
+
+// DeletePasswordReq is a request to delete a password.
+message DeletePasswordReq {
+    string email = 1;
+}
+
+// DeletePasswordResp returns the response from deleting a password.
+message DeletePasswordResp {
+    bool not_found = 1;
+}
+
+// ListPasswordReq is a request to enumerate passwords.
+message ListPasswordReq {}
+
+// ListPasswordResp returns a list of passwords.
+message ListPasswordResp {
+    repeated Password passwords = 1;
+}
+
+// VerifyPasswordReq is a request to verify the user's password.
+message VerifyPasswordReq {
+    string email = 1;
+    string password = 2;
+}
+
+// VerifyPasswordResp returns the result of password verification.
+message VerifyPasswordResp {
+    bool verified = 1;
+    bool not_found = 2;
+}
+
+// Connector is a strategy used by Dex for authenticating users
+// against another identity provider.
+message Connector {
+    string id = 1;
+    string type = 2;
+    string name = 3;
+    // Config holds connector specific configuration.
+    // The field is stored as a JSON document.
+    bytes config = 4;
+}
+
+// CreateConnectorReq is a request to create a connector.
+message CreateConnectorReq {
+    Connector connector = 1;
+}
+
+// CreateConnectorResp is a response from creating a connector.
+message CreateConnectorResp {
+    bool already_exists = 1;
+}
+
+// UpdateConnectorReq is a request to update a connector.
+message UpdateConnectorReq {
+    // The ID of the connector to update.
+    string id = 1;
+    // The new values of the connector.
+    Connector new_connector = 2;
+}
+
+// UpdateConnectorResp is a response from updating a connector.
+message UpdateConnectorResp {
+    bool not_found = 1;
+}
+
+// DeleteConnectorReq is a request to delete a connector.
+message DeleteConnectorReq {
+    string id = 1;
+}
+
+// DeleteConnectorResp is a response from deleting a connector.
+message DeleteConnectorResp {
+    bool not_found = 1;
+}
+
+// ListConnectorReq is a request to enumerate connectors.
+message ListConnectorReq {}
+
+// ListConnectorResp is a response listing connectors.
+message ListConnectorResp {
+    repeated Connector connectors = 1;
+}
+
+// VersionReq is a request to fetch version info.
+message VersionReq {}
+
+// VersionResp holds the version info of components.
+message VersionResp {
+    string server = 1;
+    int32 api = 2;
+}
+
+// RefreshTokenRef contains the metadata for a refresh token that is managed by the storage.
+message RefreshTokenRef {
+    // ID of the refresh token.
+    string id = 1;
+    string client_id = 2;
+    int64 created_at = 5;
+    int64 last_used = 6;
+}
+
+// ListRefreshReq is a request to list refresh tokens for a user.
+message ListRefreshReq {
+    // The user to list the tokens for.
+    string user_id = 1;
+}
+
+// ListRefreshResp is a response containing the refresh tokens for a user.
+message ListRefreshResp {
+    repeated RefreshTokenRef refresh_tokens = 1;
+}
+
+// RevokeRefreshReq is a request to revoke the refresh token of the user-client pair.
+message RevokeRefreshReq {
+    // The user id of the token to revoke.
+    string user_id = 1;
+    // The client id of the token to revoke.
+    string client_id = 2;
+}
+
+// RevokeRefreshResp is a response to revoking the refresh token.
+message RevokeRefreshResp {
+    // Set to true if refresh token was not found in storage.
+    bool not_found = 1;
+}
+
+// Dex represents the dex gRPC service.
+service Dex {
+    // CreateClient creates a client.
+    rpc CreateClient(CreateClientReq) returns (CreateClientResp) {}
+    // UpdateClient updates an existing client.
+    rpc UpdateClient(UpdateClientReq) returns (UpdateClientResp) {}
+    // DeleteClient deletes the provided client.
+    rpc DeleteClient(DeleteClientReq) returns (DeleteClientResp) {}
+    // CreatePassword creates a password.
+    rpc CreatePassword(CreatePasswordReq) returns (CreatePasswordResp) {}
+    // UpdatePassword modifies existing password.
+    rpc UpdatePassword(UpdatePasswordReq) returns (UpdatePasswordResp) {}
+    // DeletePassword deletes the password.
+    rpc DeletePassword(DeletePasswordReq) returns (DeletePasswordResp) {}
+    // ListPassword lists all password entries.
+    rpc ListPasswords(ListPasswordReq) returns (ListPasswordResp) {}
+    // VerifyPassword returns whether a password matches a hash for a specific user.
+    rpc VerifyPassword(VerifyPasswordReq) returns (VerifyPasswordResp) {}
+    // CreateConnector creates a connector.
+    rpc CreateConnector(CreateConnectorReq) returns (CreateConnectorResp) {}
+    // UpdateConnector updates a connector.
+    rpc UpdateConnector(UpdateConnectorReq) returns (UpdateConnectorResp) {}
+    // DeleteConnector deletes a connector.
+    rpc DeleteConnector(DeleteConnectorReq) returns (DeleteConnectorResp) {}
+    // ListConnectors lists all connectors.
+    rpc ListConnectors(ListConnectorReq) returns (ListConnectorResp) {}
+    // GetVersion returns version information of the server.
+    rpc GetVersion(VersionReq) returns (VersionResp) {}
+    // ListRefresh lists all the refresh token entries for a particular user.
+    rpc ListRefresh(ListRefreshReq) returns (ListRefreshResp) {}
+    // RevokeRefresh revokes the refresh token for the provided user-client pair.
+    rpc RevokeRefresh(RevokeRefreshReq) returns (RevokeRefreshResp) {}
+}

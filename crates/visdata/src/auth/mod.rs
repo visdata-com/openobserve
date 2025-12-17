@@ -5,18 +5,17 @@
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-//! RBAC (Role-Based Access Control) module using OpenFGA
+//! Authentication module using Dex
 //!
-//! This module provides fine-grained authorization through OpenFGA integration.
+//! This module provides SSO and authentication through Dex integration.
 
 pub mod config;
 pub mod error;
 pub mod types;
 pub mod client;
-pub mod model;
 pub mod service;
 pub mod handler;
 
-pub use config::OpenFGAConfig;
-pub use client::OpenFGAClient;
-pub use error::{Error as RbacError, Result as RbacResult};
+pub use config::DexConfig;
+pub use client::DexClient;
+pub use error::{Error as AuthError, Result as AuthResult};

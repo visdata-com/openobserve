@@ -2884,6 +2884,10 @@ fn check_disk_cache_config(cfg: &mut Config) -> Result<(), anyhow::Error> {
     cfg.disk_cache.release_size /= cfg.disk_cache.bucket_num;
     cfg.disk_cache.gc_size /= cfg.disk_cache.bucket_num;
 
+    // Ensure these values are at least 1 to prevent division by zero in gc()
+    cfg.disk_cache.result_max_size = max(1, cfg.disk_cache.result_max_size);
+    cfg.disk_cache.aggregation_max_size = max(1, cfg.disk_cache.aggregation_max_size);
+
     Ok(())
 }
 

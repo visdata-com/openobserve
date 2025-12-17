@@ -21,6 +21,62 @@ pub struct VisdataConfig {
     pub cache: CacheConfig,
     /// Encryption key for sensitive data (base64 encoded, 32 bytes for AES-256)
     pub encryption_key: Option<String>,
+
+    // ========================================================================
+    // Enterprise Configuration (OpenFGA + Dex)
+    // ========================================================================
+
+    /// OpenFGA HTTP API URL
+    #[serde(default = "default_openfga_url")]
+    pub openfga_url: String,
+
+    /// OpenFGA store name
+    #[serde(default = "default_openfga_store_name")]
+    pub openfga_store_name: String,
+
+    /// Dex gRPC URL
+    #[serde(default = "default_dex_grpc_url")]
+    pub dex_grpc_url: String,
+
+    /// Dex OIDC issuer URL
+    #[serde(default = "default_dex_issuer_url")]
+    pub dex_issuer_url: String,
+
+    /// Dex OAuth2 client ID
+    #[serde(default = "default_dex_client_id")]
+    pub dex_client_id: String,
+
+    /// Dex OAuth2 client secret
+    #[serde(default)]
+    pub dex_client_secret: String,
+
+    /// Dex OAuth2 redirect URI
+    #[serde(default = "default_dex_redirect_uri")]
+    pub dex_redirect_uri: String,
+}
+
+fn default_openfga_url() -> String {
+    "http://localhost:8080".to_string()
+}
+
+fn default_openfga_store_name() -> String {
+    "openobserve".to_string()
+}
+
+fn default_dex_grpc_url() -> String {
+    "http://localhost:5557".to_string()
+}
+
+fn default_dex_issuer_url() -> String {
+    "http://localhost:5556".to_string()
+}
+
+fn default_dex_client_id() -> String {
+    "openobserve".to_string()
+}
+
+fn default_dex_redirect_uri() -> String {
+    "http://localhost:5080/auth/callback".to_string()
 }
 
 impl Default for VisdataConfig {
@@ -30,6 +86,14 @@ impl Default for VisdataConfig {
             sso_enabled: true,
             cache: CacheConfig::default(),
             encryption_key: None,
+            // Enterprise defaults
+            openfga_url: default_openfga_url(),
+            openfga_store_name: default_openfga_store_name(),
+            dex_grpc_url: default_dex_grpc_url(),
+            dex_issuer_url: default_dex_issuer_url(),
+            dex_client_id: default_dex_client_id(),
+            dex_client_secret: String::new(),
+            dex_redirect_uri: default_dex_redirect_uri(),
         }
     }
 }
