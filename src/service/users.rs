@@ -67,7 +67,7 @@ pub async fn post_user(
     let cfg = get_config();
     usr_req.email = usr_req.email.to_lowercase();
     if usr_req.role.custom_role.is_some() {
-        #[cfg(all(not(feature = "enterprise"), not(feature = "visdata")))]
+        #[cfg(not(feature = "enterprise"))]
         return Ok(HttpResponse::BadRequest().json(MetaHttpResponse::message(
             http::StatusCode::BAD_REQUEST,
             "Custom roles not allowed",
@@ -96,35 +96,6 @@ pub async fn post_user(
                         http::StatusCode::BAD_REQUEST,
                         "Custom role not found",
                     )));
-                }
-            }
-        }
-        // Visdata: Validate custom roles exist
-        #[cfg(all(not(feature = "enterprise"), feature = "visdata"))]
-        {
-            if visdata::is_initialized() {
-                let custom_roles = usr_req.role.custom_role.as_ref().unwrap();
-                for custom_role in custom_roles {
-                    match visdata::Visdata::global()
-                        .rbac()
-                        .get_role_by_name(org_id, custom_role)
-                        .await
-                    {
-                        Ok(Some(_)) => {} // Role exists, continue
-                        Ok(None) => {
-                            return Ok(HttpResponse::BadRequest().json(MetaHttpResponse::message(
-                                http::StatusCode::BAD_REQUEST,
-                                format!("Custom role not found: {}", custom_role),
-                            )));
-                        }
-                        Err(e) => {
-                            log::error!("Error fetching custom role during post user: {e}");
-                            return Ok(HttpResponse::BadRequest().json(MetaHttpResponse::message(
-                                http::StatusCode::BAD_REQUEST,
-                                "Custom role not found",
-                            )));
-                        }
-                    }
                 }
             }
         }
@@ -233,47 +204,6 @@ pub async fn post_user(
                     }
                 }
             }
-            // Update Visdata RBAC - assign base role and custom roles to user
-            #[cfg(all(not(feature = "enterprise"), feature = "visdata"))]
-            {
-                if visdata::is_initialized() {
-                    // First, assign the base role (Admin, Editor, Viewer)
-                    // Use get_label() to get the capitalized role name that matches visdata's system roles
-                    let base_role_name = usr_req.role.base_role.get_label();
-                    if let Err(e) = visdata::service::role::add_user(
-                        &org_id,
-                        &base_role_name,
-                        &usr_req.email,
-                    )
-                    .await
-                    {
-                        log::error!(
-                            "Error assigning base role '{}' to user '{}': {e}",
-                            base_role_name,
-                            usr_req.email
-                        );
-                    }
-
-                    // Then assign custom roles if any
-                    if let Some(ref custom_roles) = usr_req.role.custom_role {
-                        for role_name in custom_roles {
-                            if let Err(e) = visdata::service::role::add_user(
-                                &org_id,
-                                role_name,
-                                &usr_req.email,
-                            )
-                            .await
-                            {
-                                log::error!(
-                                    "Error assigning custom role '{}' to user '{}': {e}",
-                                    role_name,
-                                    usr_req.email
-                                );
-                            }
-                        }
-                    }
-                }
-            }
             Ok(HttpResponse::Ok().json(MetaHttpResponse::message(
                 http::StatusCode::OK,
                 "User saved successfully",
@@ -375,9 +305,9 @@ pub async fn update_user(
         let mut is_updated = false;
         let mut is_org_updated = false;
         let mut message = "";
-        #[cfg(any(feature = "enterprise", feature = "visdata"))]
-        let mut custom_roles: Vec<String> = vec![];
-        #[cfg(any(feature = "enterprise", feature = "visdata"))]
+        #[cfg(feature = "enterprise")]
+        let mut custom_roles = vec![];
+        #[cfg(feature = "enterprise")]
         let mut custom_roles_need_change = false;
         match existing_user {
             Some(local_user) => {
@@ -483,22 +413,13 @@ pub async fn update_user(
                         message = "Root user role cannot be changed";
                     } else if update_mode.is_self_update() && local_user.role < new_user.role {
                         message = "Self role cannot be upgraded";
-                    } else {
-                        // Update custom roles regardless of whether base role changed
-                        #[cfg(any(feature = "enterprise", feature = "visdata"))]
+                    } else if local_user.role.ne(&new_user.role) {
+                        #[cfg(feature = "enterprise")]
                         if new_org_role.custom_role.is_some() {
                             custom_roles_need_change = true;
-                            custom_roles.extend(new_org_role.custom_role.clone().unwrap());
+                            custom_roles.extend(new_org_role.custom_role.unwrap());
                         }
-                        // Mark org as updated if base role changed OR custom roles are being updated
-                        #[cfg(any(feature = "enterprise", feature = "visdata"))]
-                        if local_user.role.ne(&new_user.role) || custom_roles_need_change {
-                            is_org_updated = true;
-                        }
-                        #[cfg(not(any(feature = "enterprise", feature = "visdata")))]
-                        if local_user.role.ne(&new_user.role) {
-                            is_org_updated = true;
-                        }
+                        is_org_updated = true;
                     }
                 }
                 if user.token.is_some() {
@@ -635,56 +556,6 @@ pub async fn update_user(
                                             "Failed to update custom roles for user",
                                         ),
                                     ));
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Update Visdata RBAC - sync custom roles for user
-                #[cfg(all(not(feature = "enterprise"), feature = "visdata"))]
-                {
-                    if visdata::is_initialized() && custom_roles_need_change {
-                        // Get existing roles for user (returns Vec<vd_roles::Model>)
-                        let existing_roles: Vec<String> = match visdata::Visdata::global()
-                            .rbac()
-                            .get_user_direct_roles(org_id, email)
-                            .await
-                        {
-                            Ok(roles) => roles.into_iter().map(|r| r.name).collect(),
-                            Err(e) => {
-                                log::error!("Error fetching user roles: {e}");
-                                vec![]
-                            }
-                        };
-
-                        // Add new roles that user doesn't have
-                        for role_name in &custom_roles {
-                            if !existing_roles.contains(role_name) {
-                                if let Err(e) =
-                                    visdata::service::role::add_user(org_id, role_name, email).await
-                                {
-                                    log::error!(
-                                        "Error adding custom role '{}' to user '{}': {e}",
-                                        role_name,
-                                        email
-                                    );
-                                }
-                            }
-                        }
-
-                        // Remove roles that are no longer assigned
-                        for existing_role in &existing_roles {
-                            if !custom_roles.contains(existing_role) {
-                                if let Err(e) =
-                                    visdata::service::role::remove_user(org_id, existing_role, email)
-                                        .await
-                                {
-                                    log::error!(
-                                        "Error removing custom role '{}' from user '{}': {e}",
-                                        existing_role,
-                                        email
-                                    );
                                 }
                             }
                         }
@@ -851,27 +722,6 @@ pub async fn add_user_to_org(
                     }
                 }
             }
-
-            // Update Visdata RBAC - assign custom roles to user
-            #[cfg(all(not(feature = "enterprise"), feature = "visdata"))]
-            {
-                if visdata::is_initialized() {
-                    if let Some(ref custom_roles) = role.custom_role {
-                        for role_name in custom_roles {
-                            if let Err(e) =
-                                visdata::service::role::add_user(org_id, role_name, &email).await
-                            {
-                                log::error!(
-                                    "Error assigning custom role '{}' to user '{}': {e}",
-                                    role_name,
-                                    email
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-
             Ok(HttpResponse::Ok().json(MetaHttpResponse::message(
                 http::StatusCode::OK,
                 "User added to org successfully",
@@ -1068,39 +918,6 @@ pub async fn list_users(
     }
 
     user_list.sort_by(|a, b| b.created_at.cmp(&a.created_at));
-
-    // In visdata mode, get the system role (is_system=true) from vd_role_users
-    // Custom roles are fetched separately via /users/{email}/roles API
-    #[cfg(all(not(feature = "enterprise"), feature = "visdata"))]
-    {
-        if visdata::is_initialized() {
-            for user in &mut user_list {
-                // Get user's roles from visdata
-                match visdata::Visdata::global()
-                    .rbac()
-                    .get_user_direct_roles(org_id, &user.email)
-                    .await
-                {
-                    Ok(roles) => {
-                        // Only use system roles (is_system=true) for the role field
-                        // This should be a single role like "admin", "editor", "viewer"
-                        // Use lowercase to match frontend dropdown options
-                        let system_role = roles
-                            .iter()
-                            .find(|r| r.is_system)
-                            .map(|r| r.name.to_lowercase());
-                        if let Some(role_name) = system_role {
-                            user.role = role_name;
-                        }
-                    }
-                    Err(e) => {
-                        log::debug!("Error fetching visdata roles for user {}: {e}", user.email);
-                    }
-                }
-            }
-        }
-    }
-
     Ok(HttpResponse::Ok().json(UserList { data: user_list }))
 }
 

@@ -94,12 +94,6 @@ pub async fn init_db() -> std::result::Result<(), anyhow::Error> {
     if db_schema_version == config::DB_SCHEMA_VERSION {
         // if version matches, we do not need to run update commands
         log::info!("DB_SCHEMA_VERSION match, skipping db upgrade");
-        // Still run sea-orm migrations for visdata tables (they use IF NOT EXISTS)
-        #[cfg(feature = "visdata")]
-        {
-            ORM_CLIENT_DDL.get_or_init(connect_to_orm_ddl).await;
-            infra::table::migrate().await?;
-        }
         return Ok(());
     }
     log::info!(
