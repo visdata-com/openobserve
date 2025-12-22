@@ -14,3 +14,6 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 pub mod fga;
+
+#[cfg(feature = "visdata")]
+pub mod visdata_fga;

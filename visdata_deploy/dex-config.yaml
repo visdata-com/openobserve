@@ -1,0 +1,106 @@
+# Dex 服务配置
+issuer: http://localhost:5556
+
+# 存储后端
+storage:
+  type: postgres
+  config:
+    host: postgres
+    port: 5432
+    database: dex
+    user: dex
+    password: dex
+    ssl:
+      mode: disable
+
+# Web 服务配置
+web:
+  http: 0.0.0.0:5556
+  # 生产环境启用 HTTPS
+  # https: 0.0.0.0:5556
+  # tlsCert: /etc/dex/tls/tls.crt
+  # tlsKey: /etc/dex/tls/tls.key
+
+# gRPC API (用于管理)
+grpc:
+  addr: 0.0.0.0:5557
+  # 生产环境启用 TLS
+  # tlsCert: /etc/dex/tls/tls.crt
+  # tlsKey: /etc/dex/tls/tls.key
+  reflection: true
+
+# OAuth2 配置
+oauth2:
+  skipApprovalScreen: true
+  alwaysShowLoginScreen: false
+
+# 静态客户端 (OpenObserve)
+staticClients:
+  - id: openobserve
+    name: 'OpenObserve'
+    secret: your-super-secret-key-change-me
+    redirectURIs:
+      - 'http://localhost:5080/auth/callback'
+      - 'http://localhost:5080/web/cb'
+    # 可选：启用 PKCE
+    public: false
+
+# 启用密码登录 (用于本地用户)
+enablePasswordDB: true
+
+# 连接器配置 (示例)
+connectors:
+  # GitHub OAuth
+  # - type: github
+  #   id: github
+  #   name: GitHub
+  #   config:
+  #     clientID: $GITHUB_CLIENT_ID
+  #     clientSecret: $GITHUB_CLIENT_SECRET
+  #     redirectURI: http://localhost:5556/callback
+  #     orgs:
+  #       - name: your-org
+
+  # LDAP 连接器
+  # - type: ldap
+  #   id: ldap
+  #   name: LDAP
+  #   config:
+  #     host: ldap.example.com:636
+  #     insecureNoSSL: false
+  #     bindDN: cn=admin,dc=example,dc=com
+  #     bindPW: admin-password
+  #     userSearch:
+  #       baseDN: ou=users,dc=example,dc=com
+  #       filter: "(objectClass=person)"
+  #       username: uid
+  #       emailAttr: mail
+  #       nameAttr: cn
+  #     groupSearch:
+  #       baseDN: ou=groups,dc=example,dc=com
+  #       filter: "(objectClass=groupOfNames)"
+  #       userMatchers:
+  #         - userAttr: DN
+  #           groupAttr: member
+  #       nameAttr: cn
+
+# 静态密码 (测试用，生产环境请禁用)
+staticPasswords:
+  - email: "admin@example.com"
+    # 密码: password (bcrypt hash)
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+    username: "admin"
+    userID: "admin-user-id"
+
+# 日志配置
+logger:
+  level: "info"
+  format: "json"
+
+# Token 过期时间
+expiry:
+  signingKeys: "6h"
+  idTokens: "24h"
+  refreshTokens:
+    validIfNotUsedFor: "168h"  # 7 days
+    absoluteLifetime: "720h"   # 30 days

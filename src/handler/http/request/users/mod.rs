@@ -213,9 +213,9 @@ pub async fn update(
 ) -> Result<HttpResponse, Error> {
     let (org_id, email_id) = params.into_inner();
     let email_id = email_id.trim().to_lowercase();
-    #[cfg(not(feature = "enterprise"))]
+    #[cfg(not(any(feature = "enterprise", feature = "visdata")))]
     let mut user = user.into_inner();
-    #[cfg(feature = "enterprise")]
+    #[cfg(any(feature = "enterprise", feature = "visdata"))]
     let user = user.into_inner();
     if user.eq(&UpdateUser::default()) {
         return Ok(
@@ -238,7 +238,7 @@ pub async fn update(
             )),
         );
     }
-    #[cfg(not(feature = "enterprise"))]
+    #[cfg(not(any(feature = "enterprise", feature = "visdata")))]
     {
         user.role = Some(UserRoleRequest {
             role: UserRole::Admin.to_string(),
@@ -783,7 +783,7 @@ fn check_role_available(role: &UserRole) -> Option<RolesResponse> {
     if role.eq(&UserRole::Root) || role.eq(&UserRole::ServiceAccount) {
         None
     } else {
-        #[cfg(feature = "enterprise")]
+        #[cfg(all(feature = "enterprise", not(feature = "visdata")))]
         if !get_openfga_config().enabled && role.ne(&UserRole::Admin) {
             return None;
         }

@@ -994,7 +994,7 @@ pub(crate) async fn check_permissions(
     };
 
     // Use visdata's OpenFGA-based permission check
-    visdata::rbac_fga::service::checker::check_permissions(
+    visdata::openfga::service::checker::check_permissions(
         user_id,
         org_id,
         &auth_info.method,
@@ -1087,7 +1087,7 @@ pub(crate) async fn list_objects_for_user(
         None => "".to_string(),
     };
 
-    match visdata::rbac_fga::service::checker::list_objects_for_user(
+    match visdata::openfga::service::checker::list_objects_for_user(
         org_id, user_id, permission, object_type, &role,
     )
     .await

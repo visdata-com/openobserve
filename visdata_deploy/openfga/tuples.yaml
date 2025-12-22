@@ -1,0 +1,405 @@
+# OpenFGA 初始化数据
+# 根据 openfga-init-data.md 文档生成
+
+# ============================================
+# Root 用户配置
+# ============================================
+# Root 用户归属于 default 组织
+- user: org:default
+  relation: owningOrg
+  object: user:root@openobserve.ai
+
+# Root 用户是 default 组织的管理员
+- user: user:root@openobserve.ai
+  relation: admin
+  object: org:default
+
+# Root 用户有 default 组织的上下文
+- user: user:root@openobserve.ai
+  relation: org_context
+  object: org:default
+
+# Root 用户是 _meta 组织的管理员
+- user: user:root@openobserve.ai
+  relation: admin
+  object: org:_meta
+
+# Root 用户有 _meta 组织的上下文
+- user: user:root@openobserve.ai
+  relation: org_context
+  object: org:_meta
+
+# ============================================
+# Default 组织 - 资源所有权
+# ============================================
+- user: org:default
+  relation: owningOrg
+  object: stream:_all_default
+
+- user: org:default
+  relation: owningOrg
+  object: logs:_all_default
+
+- user: org:default
+  relation: owningOrg
+  object: metrics:_all_default
+
+- user: org:default
+  relation: owningOrg
+  object: traces:_all_default
+
+- user: org:default
+  relation: owningOrg
+  object: metadata:_all_default
+
+- user: org:default
+  relation: owningOrg
+  object: index:_all_default
+
+- user: org:default
+  relation: owningOrg
+  object: dashboard:_all_default
+
+- user: org:default
+  relation: owningOrg
+  object: dfolder:_all_default
+
+- user: org:default
+  relation: owningOrg
+  object: savedviews:_all_default
+
+- user: org:default
+  relation: owningOrg
+  object: report:_all_default
+
+- user: org:default
+  relation: owningOrg
+  object: rfolder:_all_default
+
+- user: org:default
+  relation: owningOrg
+  object: alert:_all_default
+
+- user: org:default
+  relation: owningOrg
+  object: afolder:_all_default
+
+- user: org:default
+  relation: owningOrg
+  object: template:_all_default
+
+- user: org:default
+  relation: owningOrg
+  object: destination:_all_default
+
+- user: org:default
+  relation: owningOrg
+  object: function:_all_default
+
+- user: org:default
+  relation: owningOrg
+  object: pipeline:_all_default
+
+- user: org:default
+  relation: owningOrg
+  object: enrichment_table:_all_default
+
+- user: org:default
+  relation: owningOrg
+  object: summary:_all_default
+
+- user: org:default
+  relation: owningOrg
+  object: settings:_all_default
+
+- user: org:default
+  relation: owningOrg
+  object: kv:_all_default
+
+- user: org:default
+  relation: owningOrg
+  object: syslog-route:_all_default
+
+- user: org:default
+  relation: owningOrg
+  object: ratelimit:_all_default
+
+- user: org:default
+  relation: owningOrg
+  object: cipher_keys:_all_default
+
+- user: org:default
+  relation: owningOrg
+  object: license:_all_default
+
+- user: org:default
+  relation: owningOrg
+  object: user:_all_default
+
+- user: org:default
+  relation: owningOrg
+  object: group:_all_default
+
+- user: org:default
+  relation: owningOrg
+  object: role:_all_default
+
+- user: org:default
+  relation: owningOrg
+  object: passcode:_all_default
+
+- user: org:default
+  relation: owningOrg
+  object: rumtoken:_all_default
+
+- user: org:default
+  relation: owningOrg
+  object: service_accounts:_all_default
+
+- user: org:default
+  relation: owningOrg
+  object: search_jobs:_all_default
+
+- user: org:default
+  relation: owningOrg
+  object: action_scripts:_all_default
+
+- user: org:default
+  relation: owningOrg
+  object: ai:_all_default
+
+- user: org:default
+  relation: owningOrg
+  object: re_patterns:_all_default
+
+# ============================================
+# Default 组织 - 文件夹层级
+# ============================================
+- user: org:default
+  relation: owningOrg
+  object: dfolder:default
+
+- user: dfolder:_all_default
+  relation: selfParent
+  object: dfolder:default
+
+- user: org:default
+  relation: owningOrg
+  object: afolder:default
+
+- user: afolder:_all_default
+  relation: selfParent
+  object: afolder:default
+
+# ============================================
+# Default 组织 - Stream 父子关系
+# ============================================
+- user: stream:_all_default
+  relation: parent
+  object: logs:_all_default
+
+- user: stream:_all_default
+  relation: parent
+  object: metrics:_all_default
+
+- user: stream:_all_default
+  relation: parent
+  object: traces:_all_default
+
+- user: stream:_all_default
+  relation: parent
+  object: index:_all_default
+
+- user: stream:_all_default
+  relation: parent
+  object: metadata:_all_default
+
+# ============================================
+# _meta 组织 - 资源所有权
+# ============================================
+# 审计日志（特殊资源）
+- user: org:_meta
+  relation: owningOrg
+  object: logs:audit
+
+- user: org:_meta
+  relation: owningOrg
+  object: stream:_all__meta
+
+- user: org:_meta
+  relation: owningOrg
+  object: logs:_all__meta
+
+- user: org:_meta
+  relation: owningOrg
+  object: metrics:_all__meta
+
+- user: org:_meta
+  relation: owningOrg
+  object: traces:_all__meta
+
+- user: org:_meta
+  relation: owningOrg
+  object: metadata:_all__meta
+
+- user: org:_meta
+  relation: owningOrg
+  object: index:_all__meta
+
+- user: org:_meta
+  relation: owningOrg
+  object: dashboard:_all__meta
+
+- user: org:_meta
+  relation: owningOrg
+  object: dfolder:_all__meta
+
+- user: org:_meta
+  relation: owningOrg
+  object: savedviews:_all__meta
+
+- user: org:_meta
+  relation: owningOrg
+  object: report:_all__meta
+
+- user: org:_meta
+  relation: owningOrg
+  object: rfolder:_all__meta
+
+- user: org:_meta
+  relation: owningOrg
+  object: alert:_all__meta
+
+- user: org:_meta
+  relation: owningOrg
+  object: afolder:_all__meta
+
+- user: org:_meta
+  relation: owningOrg
+  object: template:_all__meta
+
+- user: org:_meta
+  relation: owningOrg
+  object: destination:_all__meta
+
+- user: org:_meta
+  relation: owningOrg
+  object: function:_all__meta
+
+- user: org:_meta
+  relation: owningOrg
+  object: pipeline:_all__meta
+
+- user: org:_meta
+  relation: owningOrg
+  object: enrichment_table:_all__meta
+
+- user: org:_meta
+  relation: owningOrg
+  object: summary:_all__meta
+
+- user: org:_meta
+  relation: owningOrg
+  object: settings:_all__meta
+
+- user: org:_meta
+  relation: owningOrg
+  object: kv:_all__meta
+
+- user: org:_meta
+  relation: owningOrg
+  object: syslog-route:_all__meta
+
+- user: org:_meta
+  relation: owningOrg
+  object: ratelimit:_all__meta
+
+- user: org:_meta
+  relation: owningOrg
+  object: cipher_keys:_all__meta
+
+- user: org:_meta
+  relation: owningOrg
+  object: license:_all__meta
+
+- user: org:_meta
+  relation: owningOrg
+  object: user:_all__meta
+
+- user: org:_meta
+  relation: owningOrg
+  object: group:_all__meta
+
+- user: org:_meta
+  relation: owningOrg
+  object: role:_all__meta
+
+- user: org:_meta
+  relation: owningOrg
+  object: passcode:_all__meta
+
+- user: org:_meta
+  relation: owningOrg
+  object: rumtoken:_all__meta
+
+- user: org:_meta
+  relation: owningOrg
+  object: service_accounts:_all__meta
+
+- user: org:_meta
+  relation: owningOrg
+  object: search_jobs:_all__meta
+
+- user: org:_meta
+  relation: owningOrg
+  object: action_scripts:_all__meta
+
+- user: org:_meta
+  relation: owningOrg
+  object: ai:_all__meta
+
+- user: org:_meta
+  relation: owningOrg
+  object: re_patterns:_all__meta
+
+# ============================================
+# _meta 组织 - 文件夹层级
+# ============================================
+- user: org:_meta
+  relation: owningOrg
+  object: dfolder:default
+
+- user: dfolder:_all__meta
+  relation: selfParent
+  object: dfolder:default
+
+- user: org:_meta
+  relation: owningOrg
+  object: afolder:default
+
+- user: afolder:_all__meta
+  relation: selfParent
+  object: afolder:default
+
+# ============================================
+# _meta 组织 - Stream 父子关系
+# ============================================
+- user: stream:_all__meta
+  relation: parent
+  object: logs:_all__meta
+
+- user: stream:_all__meta
+  relation: parent
+  object: metrics:_all__meta
+
+- user: stream:_all__meta
+  relation: parent
+  object: traces:_all__meta
+
+- user: stream:_all__meta
+  relation: parent
+  object: index:_all__meta
+
+- user: stream:_all__meta
+  relation: parent
+  object: metadata:_all__meta

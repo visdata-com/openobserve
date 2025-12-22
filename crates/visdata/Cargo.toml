@@ -40,6 +40,9 @@ dashmap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
+# OpenAPI documentation
+utoipa.workspace = true
+
 # Async
 async-trait.workspace = true
 tokio.workspace = true

@@ -644,22 +644,20 @@ pub fn get_service_routes(svc: &mut web::ServiceConfig) {
     // RBAC routes - use visdata handlers when visdata is enabled
     #[cfg(feature = "visdata")]
     let service = service
-        .service(visdata::rbac_fga::handler::create_role)
-        .service(visdata::rbac_fga::handler::list_roles)
-        .service(visdata::rbac_fga::handler::update_role)
-        .service(visdata::rbac_fga::handler::delete_role)
-        .service(visdata::rbac_fga::handler::get_role_permissions)
-        .service(visdata::rbac_fga::handler::get_role_users)
-        .service(visdata::rbac_fga::handler::create_group)
-        .service(visdata::rbac_fga::handler::list_groups)
-        .service(visdata::rbac_fga::handler::get_group)
-        .service(visdata::rbac_fga::handler::update_group)
-        .service(visdata::rbac_fga::handler::delete_group)
-        .service(visdata::rbac_fga::handler::get_user_roles)
-        .service(visdata::rbac_fga::handler::get_user_groups)
-        .service(visdata::rbac_fga::handler::list_system_roles)
-        .service(visdata::rbac_fga::handler::list_custom_roles)
-        .service(visdata::rbac_fga::handler::get_resources);
+        .service(authz::visdata_fga::create_role)
+        .service(authz::visdata_fga::get_roles)
+        .service(authz::visdata_fga::update_role)
+        .service(authz::visdata_fga::delete_role)
+        .service(authz::visdata_fga::get_role_permissions)
+        .service(authz::visdata_fga::get_users_with_role)
+        .service(authz::visdata_fga::create_group)
+        .service(authz::visdata_fga::get_groups)
+        .service(authz::visdata_fga::get_group_details)
+        .service(authz::visdata_fga::update_group)
+        .service(authz::visdata_fga::delete_group)
+        .service(authz::visdata_fga::get_roles_for_user)
+        .service(authz::visdata_fga::get_groups_for_user)
+        .service(authz::visdata_fga::get_resources);
 
     #[cfg(feature = "enterprise")]
     let service = service

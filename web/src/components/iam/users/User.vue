@@ -257,7 +257,7 @@ import { outlinedDelete } from "@quasar/extras/material-icons-outlined";
 // @ts-ignore
 import usePermissions from "@/composables/iam/usePermissions";
 import { computed, nextTick } from "vue";
-import { getRoles } from "@/services/iam";
+import { getRoles as getIamRoles } from "@/services/iam";
 
 export default defineComponent({
   name: "UserPageOpenSource",
@@ -315,6 +315,7 @@ export default defineComponent({
       await getOrgMembers();
       updateUserActions();
       await getRoles();
+      await getCustomRoles();
 
       // if (config.isCloud == "true") {
         // columns.value.push({
@@ -408,7 +409,7 @@ export default defineComponent({
       });
     };
     const getCustomRoles = async () => {
-      await getRoles(store.state.selectedOrganization.identifier)
+      await getIamRoles(store.state.selectedOrganization.identifier)
         .then((res) => {
           customRoles.value = res.data;
         })

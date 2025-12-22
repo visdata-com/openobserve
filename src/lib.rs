@@ -16,6 +16,14 @@
 #![feature(btree_cursors)]
 #![feature(variant_count)]
 
+// Feature mutual exclusivity check: enterprise and visdata cannot be enabled together
+#[cfg(all(feature = "enterprise", feature = "visdata"))]
+compile_error!(
+    "Features 'enterprise' and 'visdata' are mutually exclusive. \
+     Please enable only one of them. \
+     Use 'enterprise' for OpenObserve Enterprise or 'visdata' for VisData."
+);
+
 #[cfg(feature = "enterprise")]
 pub mod cipher;
 pub mod cli;

@@ -40,6 +40,9 @@ use {
     std::collections::HashMap,
 };
 
+#[cfg(all(feature = "visdata", not(feature = "enterprise")))]
+use {once_cell::sync::Lazy, regex::Regex};
+
 #[cfg(feature = "cloud")]
 use crate::{
     common::meta::{
@@ -50,7 +53,7 @@ use crate::{
     service::self_reporting::cloud_events::{CloudEvent, EventType, enqueue_cloud_event},
 };
 
-#[cfg(feature = "enterprise")]
+#[cfg(any(feature = "enterprise", feature = "visdata"))]
 static RE_ROLE_NAME: Lazy<Regex> = Lazy::new(|| Regex::new(r"[^a-zA-Z0-9_]+").unwrap());
 
 #[cfg(feature = "enterprise")]
@@ -748,7 +751,7 @@ fn format_role_name(org: &str, role: &str) -> String {
     format!("{org}/{role}")
 }
 
-#[cfg(feature = "enterprise")]
+#[cfg(any(feature = "enterprise", feature = "visdata"))]
 pub fn format_role_name_only(role: &str) -> String {
     RE_ROLE_NAME.replace_all(role, "_").to_string()
 }

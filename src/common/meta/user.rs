@@ -17,7 +17,7 @@ use config::meta::user::{DBUser, User, UserOrg, UserRole};
 #[cfg(feature = "cloud")]
 use o2_enterprise::enterprise::cloud::OrgInviteStatus;
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "enterprise")]
+#[cfg(any(feature = "enterprise", feature = "visdata"))]
 use strum::IntoEnumIterator;
 use utoipa::ToSchema;
 
@@ -167,12 +167,12 @@ pub fn get_default_user_role() -> UserRole {
     UserRole::Admin
 }
 
-#[cfg(feature = "enterprise")]
+#[cfg(any(feature = "enterprise", feature = "visdata"))]
 pub fn get_roles() -> Vec<UserRole> {
     UserRole::iter().collect()
 }
 
-#[cfg(not(feature = "enterprise"))]
+#[cfg(not(any(feature = "enterprise", feature = "visdata")))]
 pub fn get_roles() -> Vec<UserRole> {
     vec![UserRole::Admin, UserRole::Root, UserRole::ServiceAccount]
 }
@@ -426,7 +426,7 @@ impl From<&UserRoleRequest> for UserOrgRole {
     }
 }
 
-#[cfg(feature = "enterprise")]
+#[cfg(any(feature = "enterprise", feature = "visdata"))]
 pub fn is_standard_role(role: &str) -> bool {
     for user_role in UserRole::iter() {
         if user_role.to_string().eq_ignore_ascii_case(role) {

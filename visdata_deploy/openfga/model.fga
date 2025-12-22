@@ -1,0 +1,603 @@
+model
+  schema 1.1
+
+type user
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_DELETE or ALLOW_ALL from selfParent or ALLOW_DELETE from selfParent
+    define GET: ALLOW_ALL or ALLOW_GET or viewer from owningOrg or ALLOW_ALL from selfParent or ALLOW_GET from selfParent
+    define LIST: ALLOW_ALL or ALLOW_LIST or viewer from owningOrg or LIST from selfParent or allowed_user from owningOrg
+    define POST: ALLOW_ALL or ALLOW_POST or ALLOW_ALL from selfParent or ALLOW_POST from selfParent
+    define PUT: ALLOW_ALL or ALLOW_PUT or ALLOW_ALL from selfParent or ALLOW_PUT from selfParent
+    define owningOrg: [org]
+    define selfParent: [user]
+
+type group
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_DELETE or ALLOW_ALL from selfParent or ALLOW_DELETE from selfParent
+    define GET: ALLOW_ALL or ALLOW_GET or viewer from owningOrg or ALLOW_ALL from selfParent or ALLOW_GET from selfParent
+    define LIST: ALLOW_ALL or ALLOW_LIST or viewer from owningOrg or LIST from selfParent
+    define POST: ALLOW_ALL or ALLOW_POST or ALLOW_ALL from selfParent or ALLOW_POST from selfParent
+    define PUT: ALLOW_ALL or ALLOW_PUT or ALLOW_ALL from selfParent or ALLOW_PUT from selfParent
+    define member: [user]
+    define owningOrg: [org]
+    define selfParent: [group]
+
+type role
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_DELETE or ALLOW_ALL from selfParent or ALLOW_DELETE from selfParent
+    define GET: ALLOW_ALL or ALLOW_GET or viewer from owningOrg or ALLOW_ALL from selfParent or ALLOW_GET from selfParent
+    define LIST: ALLOW_ALL or ALLOW_LIST or viewer from owningOrg or LIST from selfParent
+    define POST: ALLOW_ALL or ALLOW_POST or ALLOW_ALL from selfParent or ALLOW_POST from selfParent
+    define PUT: ALLOW_ALL or ALLOW_PUT or ALLOW_ALL from selfParent or ALLOW_PUT from selfParent
+    define assigned: [user]
+    define grp_assigned: [group]
+    define has: members and org_context from owningOrg
+    define members: member from grp_assigned or assigned
+    define owningOrg: [org]
+    define selfParent: [role]
+    define super_user: [user]
+
+type org
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_DELETE or ALLOW_ALL from selfParent or ALLOW_DELETE from selfParent or admin or editor
+    define GET: ALLOW_ALL or ALLOW_GET or ALLOW_ALL from selfParent or ALLOW_GET from selfParent or allowed_user or admin or editor or viewer
+    define LIST: ALLOW_ALL or ALLOW_LIST or LIST from selfParent or allowed_user or admin or editor or viewer
+    define POST: ALLOW_ALL or ALLOW_POST or ALLOW_ALL from selfParent or ALLOW_POST from selfParent or admin or editor
+    define PUT: ALLOW_ALL or ALLOW_PUT or ALLOW_ALL from selfParent or ALLOW_PUT from selfParent or admin or editor
+    define admin: [user] and org_context
+    define allowed_user: [user] and org_context
+    define editor: [user] and org_context
+    define org_context: [user]
+    define selfParent: [org]
+    define viewer: [user] and org_context
+
+type function
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_DELETE or ALLOW_ALL from selfParent or ALLOW_DELETE from selfParent
+    define GET: ALLOW_ALL or ALLOW_GET or viewer from owningOrg or ALLOW_ALL from selfParent or ALLOW_GET from selfParent
+    define LIST: ALLOW_ALL or ALLOW_LIST or viewer from owningOrg or LIST from selfParent
+    define POST: ALLOW_ALL or ALLOW_POST or ALLOW_ALL from selfParent or ALLOW_POST from selfParent
+    define PUT: ALLOW_ALL or ALLOW_PUT or ALLOW_ALL from selfParent or ALLOW_PUT from selfParent
+    define owningOrg: [org]
+    define selfParent: [function]
+
+type dashboard
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_DELETE or DELETE from parent or DELETE_INDIVIDUAL_FROM_ROLE from selfContext
+    define DELETE_INDIVIDUAL_FROM_ROLE: ALLOW_DELETE or ALLOW_ALL
+    define GET: ALLOW_ALL or ALLOW_GET or GET from parent or GET_INDIVIDUAL_FROM_ROLE from selfContext
+    define GET_INDIVIDUAL_FROM_ROLE: ALLOW_GET or ALLOW_ALL
+    define LIST: ALLOW_ALL or ALLOW_LIST or LIST from parent
+    define POST: ALLOW_ALL or ALLOW_POST or POST from parent or POST_INDIVIDUAL_FROM_ROLE from selfContext
+    define POST_INDIVIDUAL_FROM_ROLE: ALLOW_POST or ALLOW_ALL
+    define PUT: ALLOW_ALL or ALLOW_PUT or PUT from parent or PUT_INDIVIDUAL_FROM_ROLE from selfContext
+    define PUT_INDIVIDUAL_FROM_ROLE: ALLOW_PUT or ALLOW_ALL
+    define owningOrg: [org]
+    define parent: [dfolder]
+    define selfContext: [dashboard]
+
+type dfolder
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_DELETE or ALLOW_ALL from selfParent or ALLOW_DELETE from selfParent
+    define GET: ALLOW_ALL or ALLOW_GET or ALLOW_ALL from selfParent or ALLOW_GET from selfParent
+    define LIST: ALLOW_ALL or ALLOW_LIST or ALLOW_ALL from selfParent or ALLOW_LIST from selfParent
+    define POST: ALLOW_ALL or ALLOW_POST or ALLOW_ALL from selfParent or ALLOW_POST from selfParent
+    define PUT: ALLOW_ALL or ALLOW_PUT or ALLOW_ALL from selfParent or ALLOW_PUT from selfParent
+    define owningOrg: [org]
+    define selfParent: [dfolder]
+
+type template
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_DELETE or ALLOW_ALL from selfParent or ALLOW_DELETE from selfParent
+    define GET: ALLOW_ALL or ALLOW_GET or ALLOW_ALL from selfParent or ALLOW_GET from selfParent
+    define LIST: ALLOW_ALL or ALLOW_LIST or ALLOW_ALL from selfParent or ALLOW_LIST from selfParent
+    define POST: ALLOW_ALL or ALLOW_POST or ALLOW_ALL from selfParent or ALLOW_POST from selfParent
+    define PUT: ALLOW_ALL or ALLOW_PUT or ALLOW_ALL from selfParent or ALLOW_PUT from selfParent
+    define owningOrg: [org]
+    define selfParent: [template]
+
+type destination
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_DELETE or ALLOW_ALL from selfParent or ALLOW_DELETE from selfParent
+    define GET: ALLOW_ALL or ALLOW_GET or ALLOW_ALL from selfParent or ALLOW_GET from selfParent
+    define LIST: ALLOW_ALL or ALLOW_LIST or ALLOW_ALL from selfParent or ALLOW_LIST from selfParent
+    define POST: ALLOW_ALL or ALLOW_POST or ALLOW_ALL from selfParent or ALLOW_POST from selfParent
+    define PUT: ALLOW_ALL or ALLOW_PUT or ALLOW_ALL from selfParent or ALLOW_PUT from selfParent
+    define owningOrg: [org]
+    define selfParent: [destination]
+
+type alert
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_DELETE or DELETE from parent or DELETE_INDIVIDUAL_FROM_ROLE from selfContext
+    define DELETE_INDIVIDUAL_FROM_ROLE: ALLOW_DELETE or ALLOW_ALL
+    define GET: ALLOW_ALL or ALLOW_GET or GET from parent or GET_INDIVIDUAL_FROM_ROLE from selfContext
+    define GET_INDIVIDUAL_FROM_ROLE: ALLOW_GET or ALLOW_ALL
+    define LIST: ALLOW_ALL or ALLOW_LIST or LIST from parent
+    define POST: ALLOW_ALL or ALLOW_POST or POST from parent or POST_INDIVIDUAL_FROM_ROLE from selfContext
+    define POST_INDIVIDUAL_FROM_ROLE: ALLOW_POST or ALLOW_ALL
+    define PUT: ALLOW_ALL or ALLOW_PUT or PUT from parent or PUT_INDIVIDUAL_FROM_ROLE from selfContext
+    define PUT_INDIVIDUAL_FROM_ROLE: ALLOW_PUT or ALLOW_ALL
+    define owningOrg: [org]
+    define parent: [afolder]
+    define selfContext: [alert]
+
+type enrichment_table
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_DELETE or ALLOW_ALL from selfParent or ALLOW_DELETE from selfParent
+    define GET: ALLOW_ALL or ALLOW_GET or ALLOW_ALL from selfParent or ALLOW_GET from selfParent
+    define LIST: ALLOW_ALL or ALLOW_LIST or ALLOW_ALL from selfParent or ALLOW_LIST from selfParent
+    define POST: ALLOW_ALL or ALLOW_POST or ALLOW_ALL from selfParent or ALLOW_POST from selfParent
+    define PUT: ALLOW_ALL or ALLOW_PUT or ALLOW_ALL from selfParent or ALLOW_PUT from selfParent
+    define owningOrg: [org]
+    define selfParent: [enrichment_table]
+
+type settings
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_DELETE or ALLOW_ALL from selfParent or ALLOW_DELETE from selfParent
+    define GET: ALLOW_ALL or ALLOW_GET or ALLOW_ALL from selfParent or ALLOW_GET from selfParent
+    define LIST: ALLOW_ALL or ALLOW_LIST or ALLOW_ALL from selfParent or ALLOW_LIST from selfParent
+    define POST: ALLOW_ALL or ALLOW_POST or ALLOW_ALL from selfParent or ALLOW_POST from selfParent
+    define PUT: ALLOW_ALL or ALLOW_PUT or ALLOW_ALL from selfParent or ALLOW_PUT from selfParent
+    define owningOrg: [org]
+    define selfParent: [settings]
+
+type kv
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_DELETE or ALLOW_ALL from selfParent or ALLOW_DELETE from selfParent
+    define GET: ALLOW_ALL or ALLOW_GET or ALLOW_ALL from selfParent or ALLOW_GET from selfParent
+    define LIST: ALLOW_ALL or ALLOW_LIST or ALLOW_ALL from selfParent or ALLOW_LIST from selfParent
+    define POST: ALLOW_ALL or ALLOW_POST or ALLOW_ALL from selfParent or ALLOW_POST from selfParent
+    define PUT: ALLOW_ALL or ALLOW_PUT or ALLOW_ALL from selfParent or ALLOW_PUT from selfParent
+    define owningOrg: [org]
+    define selfParent: [kv]
+
+type syslog-route
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_DELETE or ALLOW_ALL from selfParent or ALLOW_DELETE from selfParent
+    define GET: ALLOW_ALL or ALLOW_GET or ALLOW_ALL from selfParent or ALLOW_GET from selfParent
+    define LIST: ALLOW_ALL or ALLOW_LIST or ALLOW_ALL from selfParent or ALLOW_LIST from selfParent
+    define POST: ALLOW_ALL or ALLOW_POST or ALLOW_ALL from selfParent or ALLOW_POST from selfParent
+    define PUT: ALLOW_ALL or ALLOW_PUT or ALLOW_ALL from selfParent or ALLOW_PUT from selfParent
+    define owningOrg: [org]
+    define selfParent: [syslog-route]
+
+type summary
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_DELETE or ALLOW_ALL from selfParent or ALLOW_DELETE from selfParent
+    define GET: ALLOW_ALL or ALLOW_GET or ALLOW_ALL from selfParent or ALLOW_GET from selfParent
+    define LIST: ALLOW_ALL or ALLOW_LIST or ALLOW_ALL from selfParent or ALLOW_LIST from selfParent
+    define POST: ALLOW_ALL or ALLOW_POST or ALLOW_ALL from selfParent or ALLOW_POST from selfParent
+    define PUT: ALLOW_ALL or ALLOW_PUT or ALLOW_ALL from selfParent or ALLOW_PUT from selfParent
+    define owningOrg: [org]
+    define selfParent: [summary]
+
+type stream
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_DELETE
+    define GET: ALLOW_ALL or ALLOW_GET
+    define LIST: ALLOW_ALL or ALLOW_LIST
+    define POST: ALLOW_ALL or ALLOW_POST
+    define PUT: ALLOW_ALL or ALLOW_PUT
+    define owningOrg: [org]
+    define selfParent: [stream]
+
+type logs
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_ALL from selfParent or ALLOW_DELETE or ALLOW_DELETE from selfParent or DELETE from parent
+    define GET: ALLOW_ALL or ALLOW_ALL from selfParent or ALLOW_GET or ALLOW_GET from selfParent or GET from parent
+    define LIST: ALLOW_ALL or ALLOW_LIST or ALLOW_ALL from selfParent or ALLOW_LIST from selfParent or LIST from parent
+    define POST: ALLOW_ALL or ALLOW_ALL from selfParent or ALLOW_POST or ALLOW_POST from selfParent or POST from parent
+    define PUT: ALLOW_ALL or ALLOW_ALL from selfParent or ALLOW_PUT or ALLOW_PUT from selfParent or PUT from parent
+    define owningOrg: [org]
+    define parent: [stream]
+    define selfParent: [logs]
+
+type metrics
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_ALL from selfParent or ALLOW_DELETE or ALLOW_DELETE from selfParent or DELETE from parent
+    define GET: ALLOW_ALL or ALLOW_ALL from selfParent or ALLOW_GET or ALLOW_GET from selfParent or GET from parent
+    define LIST: ALLOW_ALL or ALLOW_LIST or ALLOW_ALL from selfParent or ALLOW_LIST from selfParent or LIST from parent
+    define POST: ALLOW_ALL or ALLOW_ALL from selfParent or ALLOW_POST or ALLOW_POST from selfParent or POST from parent
+    define PUT: ALLOW_ALL or ALLOW_ALL from selfParent or ALLOW_PUT or ALLOW_PUT from selfParent or PUT from parent
+    define owningOrg: [org]
+    define parent: [stream]
+    define selfParent: [metrics]
+
+type traces
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_ALL from selfParent or ALLOW_DELETE or ALLOW_DELETE from selfParent or DELETE from parent
+    define GET: ALLOW_ALL or ALLOW_ALL from selfParent or ALLOW_GET or ALLOW_GET from selfParent or GET from parent
+    define LIST: ALLOW_ALL or ALLOW_LIST or ALLOW_ALL from selfParent or ALLOW_LIST from selfParent or LIST from parent
+    define POST: ALLOW_ALL or ALLOW_ALL from selfParent or ALLOW_POST or ALLOW_POST from selfParent or POST from parent
+    define PUT: ALLOW_ALL or ALLOW_ALL from selfParent or ALLOW_PUT or ALLOW_PUT from selfParent or PUT from parent
+    define owningOrg: [org]
+    define parent: [stream]
+    define selfParent: [traces]
+
+type metadata
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_ALL from selfParent or ALLOW_DELETE or ALLOW_DELETE from selfParent or DELETE from parent
+    define GET: ALLOW_ALL or ALLOW_ALL from selfParent or ALLOW_GET or ALLOW_GET from selfParent or GET from parent
+    define LIST: ALLOW_ALL or ALLOW_LIST or ALLOW_ALL from selfParent or ALLOW_LIST from selfParent or LIST from parent
+    define POST: ALLOW_ALL or ALLOW_ALL from selfParent or ALLOW_POST or ALLOW_POST from selfParent or POST from parent
+    define PUT: ALLOW_ALL or ALLOW_ALL from selfParent or ALLOW_PUT or ALLOW_PUT from selfParent or PUT from parent
+    define owningOrg: [org]
+    define parent: [stream]
+    define selfParent: [metadata]
+
+type index
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_ALL from selfParent or ALLOW_DELETE or ALLOW_DELETE from selfParent or DELETE from parent
+    define GET: ALLOW_ALL or ALLOW_ALL from selfParent or ALLOW_GET or ALLOW_GET from selfParent or GET from parent
+    define LIST: ALLOW_ALL or ALLOW_LIST or ALLOW_ALL from selfParent or ALLOW_LIST from selfParent or LIST from parent
+    define POST: ALLOW_ALL or ALLOW_ALL from selfParent or ALLOW_POST or ALLOW_POST from selfParent or POST from parent
+    define PUT: ALLOW_ALL or ALLOW_ALL from selfParent or ALLOW_PUT or ALLOW_PUT from selfParent or PUT from parent
+    define owningOrg: [org]
+    define parent: [stream]
+    define selfParent: [index]
+
+type passcode
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_DELETE or ALLOW_ALL from selfParent or ALLOW_DELETE from selfParent
+    define GET: ALLOW_ALL or ALLOW_GET or ALLOW_ALL from selfParent or ALLOW_GET from selfParent
+    define LIST: ALLOW_ALL or ALLOW_LIST or ALLOW_ALL from selfParent or ALLOW_LIST from selfParent
+    define POST: ALLOW_ALL or ALLOW_POST or ALLOW_ALL from selfParent or ALLOW_POST from selfParent
+    define PUT: ALLOW_ALL or ALLOW_PUT or ALLOW_ALL from selfParent or ALLOW_PUT from selfParent
+    define owningOrg: [org]
+    define selfParent: [passcode]
+
+type rumtoken
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_DELETE or ALLOW_ALL from selfParent or ALLOW_DELETE from selfParent
+    define GET: ALLOW_ALL or ALLOW_GET or ALLOW_ALL from selfParent or ALLOW_GET from selfParent
+    define LIST: ALLOW_ALL or ALLOW_LIST or ALLOW_ALL from selfParent or ALLOW_LIST from selfParent
+    define POST: ALLOW_ALL or ALLOW_POST or ALLOW_ALL from selfParent or ALLOW_POST from selfParent
+    define PUT: ALLOW_ALL or ALLOW_PUT or ALLOW_ALL from selfParent or ALLOW_PUT from selfParent
+    define owningOrg: [org]
+    define selfParent: [rumtoken]
+
+type savedviews
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_DELETE or ALLOW_ALL from selfParent or ALLOW_DELETE from selfParent
+    define GET: ALLOW_ALL or ALLOW_GET or ALLOW_ALL from selfParent or ALLOW_GET from selfParent
+    define LIST: ALLOW_ALL or ALLOW_LIST or ALLOW_ALL from selfParent or ALLOW_LIST from selfParent
+    define POST: ALLOW_ALL or ALLOW_POST or ALLOW_ALL from selfParent or ALLOW_POST from selfParent
+    define PUT: ALLOW_ALL or ALLOW_PUT or ALLOW_ALL from selfParent or ALLOW_PUT from selfParent
+    define owningOrg: [org]
+    define selfParent: [savedviews]
+
+type report
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_DELETE or ALLOW_ALL from selfParent or ALLOW_DELETE from selfParent
+    define GET: ALLOW_ALL or ALLOW_GET or ALLOW_ALL from selfParent or ALLOW_GET from selfParent
+    define LIST: ALLOW_ALL or ALLOW_LIST or ALLOW_ALL from selfParent or ALLOW_LIST from selfParent
+    define POST: ALLOW_ALL or ALLOW_POST or ALLOW_ALL from selfParent or ALLOW_POST from selfParent
+    define PUT: ALLOW_ALL or ALLOW_PUT or ALLOW_ALL from selfParent or ALLOW_PUT from selfParent
+    define owningOrg: [org]
+    define parent: [rfolder]
+    define selfParent: [report]
+
+type pipeline
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_DELETE or ALLOW_ALL from selfParent or ALLOW_DELETE from selfParent
+    define GET: ALLOW_ALL or ALLOW_GET or ALLOW_ALL from selfParent or ALLOW_GET from selfParent
+    define LIST: ALLOW_ALL or ALLOW_LIST or ALLOW_ALL from selfParent or ALLOW_LIST from selfParent
+    define POST: ALLOW_ALL or ALLOW_POST or ALLOW_ALL from selfParent or ALLOW_POST from selfParent
+    define PUT: ALLOW_ALL or ALLOW_PUT or ALLOW_ALL from selfParent or ALLOW_PUT from selfParent
+    define owningOrg: [org]
+    define selfParent: [pipeline]
+
+type service_accounts
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_DELETE or ALLOW_ALL from selfParent or ALLOW_DELETE from selfParent
+    define GET: ALLOW_ALL or ALLOW_GET or ALLOW_ALL from selfParent or ALLOW_GET from selfParent
+    define LIST: ALLOW_ALL or ALLOW_LIST or ALLOW_ALL from selfParent or ALLOW_LIST from selfParent
+    define POST: ALLOW_ALL or ALLOW_POST or ALLOW_ALL from selfParent or ALLOW_POST from selfParent
+    define PUT: ALLOW_ALL or ALLOW_PUT or ALLOW_ALL from selfParent or ALLOW_PUT from selfParent
+    define owningOrg: [org]
+    define selfParent: [service_accounts]
+
+type search_jobs
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_DELETE or ALLOW_ALL from selfParent or ALLOW_DELETE from selfParent
+    define GET: ALLOW_ALL or ALLOW_GET or ALLOW_ALL from selfParent or ALLOW_GET from selfParent
+    define LIST: ALLOW_ALL or ALLOW_LIST or ALLOW_ALL from selfParent or ALLOW_LIST from selfParent
+    define POST: ALLOW_ALL or ALLOW_POST or ALLOW_ALL from selfParent or ALLOW_POST from selfParent
+    define PUT: ALLOW_ALL or ALLOW_PUT or ALLOW_ALL from selfParent or ALLOW_PUT from selfParent
+    define owningOrg: [org]
+    define selfParent: [search_jobs]
+
+type cipher_keys
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_DELETE or ALLOW_ALL from selfParent or ALLOW_DELETE from selfParent
+    define GET: ALLOW_ALL or ALLOW_GET or ALLOW_ALL from selfParent or ALLOW_GET from selfParent
+    define LIST: ALLOW_ALL or ALLOW_LIST or ALLOW_ALL from selfParent or ALLOW_LIST from selfParent
+    define POST: ALLOW_ALL or ALLOW_POST or ALLOW_ALL from selfParent or ALLOW_POST from selfParent
+    define PUT: ALLOW_ALL or ALLOW_PUT or ALLOW_ALL from selfParent or ALLOW_PUT from selfParent
+    define owningOrg: [org]
+    define selfParent: [cipher_keys]
+
+type action_scripts
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_DELETE or ALLOW_ALL from selfParent or ALLOW_DELETE from selfParent
+    define GET: ALLOW_ALL or ALLOW_GET or ALLOW_ALL from selfParent or ALLOW_GET from selfParent
+    define LIST: ALLOW_ALL or ALLOW_LIST or ALLOW_ALL from selfParent or ALLOW_LIST from selfParent
+    define POST: ALLOW_ALL or ALLOW_POST or ALLOW_ALL from selfParent or ALLOW_POST from selfParent
+    define PUT: ALLOW_ALL or ALLOW_PUT or ALLOW_ALL from selfParent or ALLOW_PUT from selfParent
+    define owningOrg: [org]
+    define selfParent: [action_scripts]
+
+type afolder
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_DELETE or ALLOW_ALL from selfParent or ALLOW_DELETE from selfParent
+    define GET: ALLOW_ALL or ALLOW_GET or ALLOW_ALL from selfParent or ALLOW_GET from selfParent
+    define LIST: ALLOW_ALL or ALLOW_LIST or ALLOW_ALL from selfParent or ALLOW_LIST from selfParent
+    define POST: ALLOW_ALL or ALLOW_POST or ALLOW_ALL from selfParent or ALLOW_POST from selfParent
+    define PUT: ALLOW_ALL or ALLOW_PUT or ALLOW_ALL from selfParent or ALLOW_PUT from selfParent
+    define owningOrg: [org]
+    define selfParent: [afolder]
+
+type rfolder
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_DELETE or ALLOW_ALL from selfParent or ALLOW_DELETE from selfParent
+    define GET: ALLOW_ALL or ALLOW_GET or ALLOW_ALL from selfParent or ALLOW_GET from selfParent
+    define LIST: ALLOW_ALL or ALLOW_LIST or ALLOW_ALL from selfParent or ALLOW_LIST from selfParent
+    define POST: ALLOW_ALL or ALLOW_POST or ALLOW_ALL from selfParent or ALLOW_POST from selfParent
+    define PUT: ALLOW_ALL or ALLOW_PUT or ALLOW_ALL from selfParent or ALLOW_PUT from selfParent
+    define owningOrg: [org]
+    define selfParent: [rfolder]
+
+type ratelimit
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_DELETE or ALLOW_ALL from selfParent or ALLOW_DELETE from selfParent
+    define GET: ALLOW_ALL or ALLOW_GET or ALLOW_ALL from selfParent or ALLOW_GET from selfParent
+    define LIST: ALLOW_ALL or ALLOW_LIST or ALLOW_ALL from selfParent or ALLOW_LIST from selfParent
+    define POST: ALLOW_ALL or ALLOW_POST or ALLOW_ALL from selfParent or ALLOW_POST from selfParent
+    define PUT: ALLOW_ALL or ALLOW_PUT or ALLOW_ALL from selfParent or ALLOW_PUT from selfParent
+    define owningOrg: [org]
+    define selfParent: [ratelimit]
+
+type ai
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_DELETE
+    define GET: ALLOW_ALL or ALLOW_GET
+    define LIST: ALLOW_ALL or ALLOW_LIST
+    define POST: ALLOW_ALL or ALLOW_POST
+    define PUT: ALLOW_ALL or ALLOW_PUT
+    define owningOrg: [org]
+
+type re_patterns
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_DELETE or ALLOW_ALL from selfParent or ALLOW_DELETE from selfParent
+    define GET: ALLOW_ALL or ALLOW_GET or ALLOW_ALL from selfParent or ALLOW_GET from selfParent
+    define LIST: ALLOW_ALL or ALLOW_LIST or ALLOW_ALL from selfParent or ALLOW_LIST from selfParent
+    define POST: ALLOW_ALL or ALLOW_POST or ALLOW_ALL from selfParent or ALLOW_POST from selfParent
+    define PUT: ALLOW_ALL or ALLOW_PUT or ALLOW_ALL from selfParent or ALLOW_PUT from selfParent
+    define owningOrg: [org]
+    define selfParent: [re_patterns]
+
+type license
+  relations
+    define ALLOW_ALL: [role#has]
+    define ALLOW_DELETE: [role#has]
+    define ALLOW_GET: [role#has]
+    define ALLOW_LIST: [role#has]
+    define ALLOW_POST: [role#has]
+    define ALLOW_PUT: [role#has]
+    define DELETE: ALLOW_ALL or ALLOW_DELETE or ALLOW_ALL from selfParent or ALLOW_DELETE from selfParent
+    define GET: ALLOW_ALL or ALLOW_GET or ALLOW_ALL from selfParent or ALLOW_GET from selfParent
+    define LIST: ALLOW_ALL or ALLOW_LIST or ALLOW_ALL from selfParent or ALLOW_LIST from selfParent
+    define POST: ALLOW_ALL or ALLOW_POST or ALLOW_ALL from selfParent or ALLOW_POST from selfParent
+    define PUT: ALLOW_ALL or ALLOW_PUT or ALLOW_ALL from selfParent or ALLOW_PUT from selfParent
+    define owningOrg: [org]
+    define selfParent: [license]
