@@ -53,6 +53,34 @@ pub struct VisdataConfig {
     /// Dex OAuth2 redirect URI
     #[serde(default = "default_dex_redirect_uri")]
     pub dex_redirect_uri: String,
+
+    // ========================================================================
+    // Log Patterns Configuration
+    // ========================================================================
+
+    /// Maximum number of logs to analyze for pattern extraction
+    #[serde(default = "default_log_patterns_max_logs")]
+    pub log_patterns_max_logs: usize,
+
+    /// Minimum cluster size for a pattern to be considered valid
+    #[serde(default = "default_log_patterns_min_cluster_size")]
+    pub log_patterns_min_cluster_size: usize,
+
+    /// Similarity threshold for grouping logs (0.0-1.0)
+    #[serde(default = "default_log_patterns_similarity_threshold")]
+    pub log_patterns_similarity_threshold: f64,
+
+    /// Drain algorithm tree depth
+    #[serde(default = "default_log_patterns_drain_depth")]
+    pub log_patterns_drain_depth: usize,
+
+    /// Maximum child nodes per tree node
+    #[serde(default = "default_log_patterns_drain_max_child")]
+    pub log_patterns_drain_max_child: usize,
+
+    /// Maximum number of clusters/patterns to extract
+    #[serde(default = "default_log_patterns_max_clusters")]
+    pub log_patterns_max_clusters: usize,
 }
 
 fn default_openfga_url() -> String {
@@ -76,7 +104,32 @@ fn default_dex_client_id() -> String {
 }
 
 fn default_dex_redirect_uri() -> String {
-    "http://localhost:5080/auth/callback".to_string()
+    "http://localhost:5080/config/redirect".to_string()
+}
+
+// Log Patterns defaults
+fn default_log_patterns_max_logs() -> usize {
+    10000
+}
+
+fn default_log_patterns_min_cluster_size() -> usize {
+    2
+}
+
+fn default_log_patterns_similarity_threshold() -> f64 {
+    0.6
+}
+
+fn default_log_patterns_drain_depth() -> usize {
+    4
+}
+
+fn default_log_patterns_drain_max_child() -> usize {
+    100
+}
+
+fn default_log_patterns_max_clusters() -> usize {
+    1000
 }
 
 impl Default for VisdataConfig {
@@ -94,6 +147,13 @@ impl Default for VisdataConfig {
             dex_client_id: default_dex_client_id(),
             dex_client_secret: String::new(),
             dex_redirect_uri: default_dex_redirect_uri(),
+            // Log Patterns defaults
+            log_patterns_max_logs: default_log_patterns_max_logs(),
+            log_patterns_min_cluster_size: default_log_patterns_min_cluster_size(),
+            log_patterns_similarity_threshold: default_log_patterns_similarity_threshold(),
+            log_patterns_drain_depth: default_log_patterns_drain_depth(),
+            log_patterns_drain_max_child: default_log_patterns_drain_max_child(),
+            log_patterns_max_clusters: default_log_patterns_max_clusters(),
         }
     }
 }

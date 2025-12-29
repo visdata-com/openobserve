@@ -243,9 +243,23 @@ async fn get_jwks_keys(issuer_url: &str) -> Result<JwksKeys> {
         }
     }
 
-    // Fetch JWKS
+    // First, discover the JWKS URI from the OIDC discovery endpoint
     let client = Client::new();
-    let jwks_url = format!("{}/.well-known/jwks.json", issuer_url);
+    let discovery_url = format!("{}/.well-known/openid-configuration", issuer_url);
+
+    let jwks_url = match client.get(&discovery_url).send().await {
+        Ok(resp) if resp.status().is_success() => {
+            if let Ok(config) = resp.json::<serde_json::Value>().await {
+                config["jwks_uri"]
+                    .as_str()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| format!("{}/keys", issuer_url))
+            } else {
+                format!("{}/keys", issuer_url)
+            }
+        }
+        _ => format!("{}/keys", issuer_url), // Fallback to Dex default
+    };
 
     let response = client.get(&jwks_url).send().await?;
     if !response.status().is_success() {

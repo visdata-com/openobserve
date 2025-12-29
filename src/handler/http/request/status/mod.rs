@@ -950,6 +950,245 @@ async fn refresh_token_with_dex(req: actix_web::HttpRequest) -> HttpResponse {
     }
 }
 
+// ==========================================
+// Visdata Dex Integration
+// ==========================================
+
+#[cfg(all(feature = "visdata", not(feature = "enterprise")))]
+#[get("/dex_login")]
+pub async fn dex_login() -> Result<HttpResponse, Error> {
+    use visdata::dex::service::token::pre_login;
+
+    match pre_login(None).await {
+        Ok(login_data) => {
+            let state = login_data.state.clone();
+            // Store state in KV for later verification
+            let _ = crate::service::kv::set(
+                crate::handler::http::auth::validator::PKCE_STATE_ORG,
+                &state,
+                state.clone().into(),
+            ).await;
+
+            Ok(HttpResponse::Ok().json(login_data.auth_url))
+        }
+        Err(e) => {
+            log::error!("Dex pre_login failed: {:?}", e);
+            Ok(HttpResponse::InternalServerError().json(format!("Login failed: {}", e)))
+        }
+    }
+}
+
+#[cfg(all(feature = "visdata", not(feature = "enterprise")))]
+#[get("/dex_refresh")]
+pub async fn refresh_token_with_dex(req: actix_web::HttpRequest) -> HttpResponse {
+    use visdata::dex::service::token::refresh_token as visdata_refresh_token;
+
+    let token = if let Some(cookie) = req.cookie("auth_tokens") {
+        let decoded_cookie = config::utils::base64::decode(cookie.value()).unwrap_or_default();
+        let auth_tokens: AuthTokens = json::from_str(&decoded_cookie).unwrap_or_default();
+
+        // Remove old session id from cluster co-ordinator
+        let access_token = auth_tokens.access_token;
+        if access_token.starts_with("session") {
+            crate::service::session::remove_session(access_token.strip_prefix("session ").unwrap())
+                .await;
+        }
+
+        auth_tokens.refresh_token
+    } else {
+        return HttpResponse::Unauthorized().finish();
+    };
+
+    // Exchange the refresh token for a new access token
+    match visdata_refresh_token(&token).await {
+        Ok(tokens) => {
+            // Generate new UUID for access token & store token in DB
+            let session_id = config::ider::uuid();
+
+            if tokens.access_token.is_empty() {
+                return HttpResponse::Unauthorized().json("access token is empty".to_string());
+            }
+
+            // Store session_id in cluster co-ordinator
+            let _ = crate::service::session::set_session(&session_id, &tokens.access_token).await;
+
+            let access_token = format!("session {session_id}");
+
+            let auth_tokens = AuthTokens {
+                access_token,
+                refresh_token: tokens.refresh_token.unwrap_or_default(),
+            };
+            let tokens_str = json::to_string(&auth_tokens).unwrap();
+            let conf = get_config();
+            let tokens_encoded = base64::encode(&tokens_str);
+            let mut auth_cookie = Cookie::new("auth_tokens", tokens_encoded);
+            auth_cookie.set_expires(
+                cookie::time::OffsetDateTime::now_utc()
+                    + cookie::time::Duration::seconds(conf.auth.cookie_max_age),
+            );
+            auth_cookie.set_http_only(true);
+            auth_cookie.set_secure(conf.auth.cookie_secure_only);
+            auth_cookie.set_path("/");
+            if conf.auth.cookie_same_site_lax {
+                auth_cookie.set_same_site(SameSite::Lax);
+            } else {
+                auth_cookie.set_same_site(SameSite::None);
+            }
+
+            HttpResponse::Ok().cookie(auth_cookie).finish()
+        }
+        Err(_) => {
+            let conf = get_config();
+            let tokens = json::to_string(&AuthTokens::default()).unwrap();
+            let tokens = base64::encode(&tokens);
+            let mut auth_cookie = Cookie::new("auth_tokens", tokens);
+            auth_cookie.set_expires(
+                cookie::time::OffsetDateTime::now_utc()
+                    + cookie::time::Duration::seconds(conf.auth.cookie_max_age),
+            );
+            auth_cookie.set_http_only(true);
+            auth_cookie.set_secure(conf.auth.cookie_secure_only);
+            auth_cookie.set_path("/");
+            if conf.auth.cookie_same_site_lax {
+                auth_cookie.set_same_site(SameSite::Lax);
+            } else {
+                auth_cookie.set_same_site(SameSite::None);
+            }
+
+            HttpResponse::Unauthorized()
+                .append_header((header::LOCATION, "/"))
+                .cookie(auth_cookie)
+                .finish()
+        }
+    }
+}
+
+/// OAuth2 callback handler for Visdata SSO
+/// Handles the redirect from Dex after successful authentication
+#[cfg(all(feature = "visdata", not(feature = "enterprise")))]
+#[get("/redirect")]
+pub async fn redirect(req: actix_web::HttpRequest) -> Result<HttpResponse, Error> {
+    use visdata::dex::service::token::{exchange_code, verify_token};
+    use crate::handler::http::auth::validator::PKCE_STATE_ORG;
+
+    let query = web::Query::<HashMap<String, String>>::from_query(req.query_string()).unwrap();
+
+    // Get authorization code
+    let code = match query.get("code") {
+        Some(code) => code,
+        None => {
+            return Err(Error::other("no code in request"));
+        }
+    };
+
+    // Verify state parameter (CSRF protection)
+    match query.get("state") {
+        Some(state) => match crate::service::kv::get(PKCE_STATE_ORG, state).await {
+            Ok(_) => {
+                let _ = crate::service::kv::delete(PKCE_STATE_ORG, state).await;
+            }
+            Err(_) => {
+                return Err(Error::other("invalid state in request"));
+            }
+        },
+        None => {
+            return Err(Error::other("no state in request"));
+        }
+    };
+
+    log::info!("Visdata SSO: exchanging code for tokens");
+
+    // Exchange code for tokens
+    match exchange_code(code, query.get("state").unwrap_or(&String::new())).await {
+        Ok(tokens) => {
+            let cfg = get_config();
+
+            // Verify the access token
+            let token_to_verify = tokens.id_token.as_ref().unwrap_or(&tokens.access_token);
+            match verify_token(token_to_verify).await {
+                Ok(validation) => {
+                    log::info!("Visdata SSO: user {} authenticated", validation.user_email);
+
+                    // Create or update user in database (similar to enterprise process_token)
+                    if let Err(e) = crate::handler::http::auth::jwt::process_token_visdata(
+                        &validation.user_email,
+                        &validation.user_name,
+                        &validation.given_name,
+                        &validation.family_name,
+                    ).await {
+                        log::error!("Visdata SSO: failed to process token: {}", e);
+                        return Ok(HttpResponse::InternalServerError()
+                            .json(format!("Failed to create user: {}", e)));
+                    }
+
+                    // Generate session ID and store token
+                    let session_id = config::ider::uuid();
+                    let _ = crate::service::session::set_session(&session_id, &tokens.access_token).await;
+
+                    let access_token = format!("session {session_id}");
+
+                    // Build auth tokens for cookie
+                    let auth_tokens = AuthTokens {
+                        access_token,
+                        refresh_token: tokens.refresh_token.unwrap_or_default(),
+                    };
+                    let tokens_str = json::to_string(&auth_tokens).unwrap();
+                    let tokens_encoded = base64::encode(&tokens_str);
+
+                    // Create auth cookie
+                    let mut auth_cookie = Cookie::new("auth_tokens", tokens_encoded);
+                    auth_cookie.set_expires(
+                        cookie::time::OffsetDateTime::now_utc()
+                            + cookie::time::Duration::seconds(cfg.auth.cookie_max_age),
+                    );
+                    auth_cookie.set_http_only(true);
+                    auth_cookie.set_secure(cfg.auth.cookie_secure_only);
+                    auth_cookie.set_path("/");
+                    if cfg.auth.cookie_same_site_lax {
+                        auth_cookie.set_same_site(SameSite::Lax);
+                    } else {
+                        auth_cookie.set_same_site(SameSite::None);
+                    }
+
+                    // Build id_token for frontend
+                    let id_token_json = json::to_string(&json::json!({
+                        "email": validation.user_email,
+                        "name": validation.user_name,
+                        "family_name": validation.family_name,
+                        "given_name": validation.given_name,
+                        "is_valid": validation.is_valid,
+                    }))
+                    .unwrap();
+
+                    // Redirect to web UI with token (same as enterprise: /web/cb#id_token=...)
+                    let login_url = format!(
+                        "{}{}/web/cb#id_token={}.{}",
+                        cfg.common.web_url,
+                        cfg.common.base_uri,
+                        crate::handler::http::auth::validator::ID_TOKEN_HEADER,
+                        base64::encode(&id_token_json),
+                    );
+
+                    log::info!("Visdata SSO: redirecting user to {}", login_url);
+
+                    Ok(HttpResponse::Found()
+                        .append_header((header::LOCATION, login_url))
+                        .cookie(auth_cookie)
+                        .finish())
+                }
+                Err(e) => {
+                    log::error!("Visdata SSO: token verification failed: {:?}", e);
+                    Ok(HttpResponse::Unauthorized().json(format!("Token verification failed: {}", e)))
+                }
+            }
+        }
+        Err(e) => {
+            log::error!("Visdata SSO: code exchange failed: {:?}", e);
+            Ok(HttpResponse::Unauthorized().json(format!("Code exchange failed: {}", e)))
+        }
+    }
+}
+
 fn prepare_empty_cookie<'a, T: Serialize + ?Sized>(
     cookie_name: &'a str,
     token_struct: &T,

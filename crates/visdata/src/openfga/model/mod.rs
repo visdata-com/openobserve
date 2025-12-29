@@ -11,4 +11,4 @@ pub mod resources;
 pub mod schema;
 
 pub use resources::{RESOURCE_TYPES, get_resource, get_all_resources};
-pub use schema::get_authorization_model_json;
+pub use schema::{get_authorization_model_json, get_initial_tuples};

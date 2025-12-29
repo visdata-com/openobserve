@@ -27,6 +27,20 @@ use {
     o2_openfga::meta::mapping::OFGA_MODELS,
 };
 
+#[cfg(all(feature = "visdata", not(feature = "enterprise")))]
+use {
+    crate::{
+        common::{
+            meta::http::HttpResponse as MetaHttpResponse,
+            utils::auth::is_root_user,
+        },
+        service::users::get_user,
+    },
+    actix_web::HttpResponse,
+    config::meta::{stream::StreamType, user::User},
+    visdata::openfga::meta::mapping::OFGA_MODELS,
+};
+
 // Check permissions on stream
 #[cfg(feature = "enterprise")]
 pub async fn check_stream_permissions(
@@ -61,6 +75,54 @@ pub async fn check_stream_permissions(
         .await
         {
             return Some(MetaHttpResponse::forbidden("Unauthorized Access"));
+        }
+    }
+    None
+}
+
+// Check permissions on stream (visdata version)
+#[allow(dead_code)] // Used by patterns handler under visdata feature
+#[cfg(all(feature = "visdata", not(feature = "enterprise")))]
+pub async fn check_stream_permissions(
+    stream_name: &str,
+    org_id: &str,
+    user_id: &str,
+    stream_type: &StreamType,
+) -> Option<HttpResponse> {
+    if !is_root_user(user_id) {
+        let user: User = get_user(Some(org_id), user_id).await.unwrap();
+        let stream_type_str = stream_type.as_str();
+        let role_str = user.role.to_string();
+
+        // Use visdata's OpenFGA authorizer for permission check
+        let resource_type = OFGA_MODELS
+            .get(stream_type_str)
+            .map_or(stream_type_str.to_string(), |model| model.key.to_string());
+        let object = format!("{}:{}", resource_type, stream_name);
+
+        match visdata::openfga::authorizer::authz::is_allowed(
+            org_id,
+            user_id,
+            "GET",     // HTTP method for read access
+            &object,   // Format: "resource_type:entity_id"
+            "",        // parent_id (not used)
+            &role_str,
+        )
+        .await
+        {
+            Ok(allowed) => {
+                if !allowed {
+                    return Some(MetaHttpResponse::forbidden("Unauthorized Access"));
+                }
+            }
+            Err(e) => {
+                log::error!("Failed to check permissions for stream {}: {}", stream_name, e);
+                // Allow access if OpenFGA is not available (fallback to role-based)
+                let role = role_str.as_str();
+                if role != "Admin" && role != "Root" && role != "Member" {
+                    return Some(MetaHttpResponse::forbidden("Unauthorized Access"));
+                }
+            }
         }
     }
     None

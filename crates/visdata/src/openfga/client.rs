@@ -58,8 +58,10 @@ impl OpenFGAClient {
         self.config.read().await.model_id.clone()
     }
 
-    /// Initialize store (create if not exists)
+    /// Initialize store (create if not exists, write model and initial tuples)
     async fn init_store(&self) -> Result<()> {
+        use super::model::schema::{get_authorization_model_json, get_initial_tuples};
+
         let config = self.config.read().await;
         let store_name = config.store_name.clone();
         let api_url = config.api_url.clone();
@@ -67,32 +69,64 @@ impl OpenFGAClient {
 
         // Try to find existing store
         let stores = self.list_stores().await?;
+        let is_new_store;
+
         if let Some(store) = stores.iter().find(|s| s.name == store_name) {
             let mut config = self.config.write().await;
             config.store_id = store.id.clone();
             tracing::info!("[OpenFGA] Using existing store: {}", store.id);
-            return Ok(());
+            is_new_store = false;
+        } else {
+            // Create new store
+            let url = format!("{}/stores", api_url);
+            let req = CreateStoreRequest { name: store_name.clone() };
+
+            let resp = self.http.post(&url).json(&req).send().await?;
+
+            if !resp.status().is_success() {
+                let status = resp.status();
+                let body = resp.text().await.unwrap_or_default();
+                return Err(Error::OpenFGA(format!(
+                    "Failed to create store: {} - {}",
+                    status, body
+                )));
+            }
+
+            let store: CreateStoreResponse = resp.json().await?;
+            let mut config = self.config.write().await;
+            config.store_id = store.id.clone();
+            tracing::info!("[OpenFGA] Created new store: {}", store.id);
+            is_new_store = true;
         }
 
-        // Create new store
-        let url = format!("{}/stores", api_url);
-        let req = CreateStoreRequest { name: store_name.clone() };
-
-        let resp = self.http.post(&url).json(&req).send().await?;
-
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp.text().await.unwrap_or_default();
-            return Err(Error::OpenFGA(format!(
-                "Failed to create store: {} - {}",
-                status, body
-            )));
+        // Check if model exists, write if not
+        let model_id = self.get_latest_model_id().await?;
+        if model_id.is_none() {
+            tracing::info!("[OpenFGA] No authorization model found, writing default model...");
+            let model_json = get_authorization_model_json();
+            self.write_authorization_model(model_json).await?;
+        } else {
+            // Update config with existing model ID
+            let mut config = self.config.write().await;
+            config.model_id = model_id;
+            tracing::info!("[OpenFGA] Using existing authorization model");
         }
 
-        let store: CreateStoreResponse = resp.json().await?;
-        let mut config = self.config.write().await;
-        config.store_id = store.id.clone();
-        tracing::info!("[OpenFGA] Created new store: {}", store.id);
+        // Write initial tuples only for new store
+        if is_new_store {
+            tracing::info!("[OpenFGA] Writing initial tuples...");
+            let initial_tuples = get_initial_tuples();
+
+            // Write tuples in batches (OpenFGA has a limit per request)
+            const BATCH_SIZE: usize = 50;
+            for chunk in initial_tuples.chunks(BATCH_SIZE) {
+                if let Err(e) = self.write(chunk.to_vec(), vec![]).await {
+                    tracing::warn!("[OpenFGA] Failed to write some initial tuples: {}", e);
+                    // Continue with other batches, some tuples might already exist
+                }
+            }
+            tracing::info!("[OpenFGA] Initial tuples written successfully");
+        }
 
         Ok(())
     }

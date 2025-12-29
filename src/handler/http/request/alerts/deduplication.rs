@@ -58,8 +58,29 @@ pub async fn get_config(org_id: web::Path<String>) -> Result<HttpResponse, actix
     }
 }
 
+/// Get deduplication configuration for an organization (Visdata - Returns default presets)
+#[cfg(all(feature = "visdata", not(feature = "enterprise")))]
+#[utoipa::path(
+    context_path = "/api",
+    tag = "Alerts",
+    operation_id = "GetDeduplicationConfig",
+    security(("Authorization" = [])),
+    params(
+        ("org_id" = String, Path, description = "Organization ID"),
+    ),
+    responses(
+        (status = 200, description = "Success", body = config::meta::alerts::deduplication::GlobalDeduplicationConfig),
+    ),
+)]
+#[get("/{org_id}/alerts/deduplication/config")]
+pub async fn get_config(_org_id: web::Path<String>) -> Result<HttpResponse, actix_web::Error> {
+    // Visdata version: return default configuration with presets
+    let config = config::meta::alerts::deduplication::GlobalDeduplicationConfig::default_with_presets();
+    Ok(HttpResponse::Ok().json(config))
+}
+
 /// Get deduplication configuration for an organization (OSS - Not Supported)
-#[cfg(not(feature = "enterprise"))]
+#[cfg(all(not(feature = "enterprise"), not(feature = "visdata")))]
 #[utoipa::path(
     context_path = "/api",
     tag = "Alerts",
@@ -256,8 +277,31 @@ pub async fn get_semantic_groups(
     }
 }
 
+/// Get semantic field groups (Visdata - Returns default presets)
+#[cfg(all(feature = "visdata", not(feature = "enterprise")))]
+#[utoipa::path(
+    context_path = "/api",
+    tag = "Alerts",
+    operation_id = "GetSemanticGroups",
+    security(("Authorization" = [])),
+    params(
+        ("org_id" = String, Path, description = "Organization ID"),
+    ),
+    responses(
+        (status = 200, description = "Success", body = Vec<config::meta::alerts::deduplication::SemanticFieldGroup>),
+    ),
+)]
+#[get("/{org_id}/alerts/deduplication/semantic-groups")]
+pub async fn get_semantic_groups(
+    _org_id: web::Path<String>,
+) -> Result<HttpResponse, actix_web::Error> {
+    // Visdata version: return built-in default semantic groups
+    let defaults = config::meta::alerts::deduplication::SemanticFieldGroup::default_presets();
+    Ok(HttpResponse::Ok().json(defaults))
+}
+
 /// Get semantic field groups (OSS - Not Supported)
-#[cfg(not(feature = "enterprise"))]
+#[cfg(all(not(feature = "enterprise"), not(feature = "visdata")))]
 #[utoipa::path(
     context_path = "/api",
     tag = "Alerts",

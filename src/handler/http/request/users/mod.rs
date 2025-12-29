@@ -911,6 +911,64 @@ pub async fn list_invitations(Headers(_): Headers<UserEmail>) -> Result<HttpResp
     Ok(HttpResponse::Forbidden().json("Not Supported"))
 }
 
+/// VerifyUser - Verify and get user information after SSO login
+/// This endpoint is called after SSO login to verify the user exists and get their info
+#[cfg(all(feature = "visdata", not(feature = "enterprise"), not(feature = "cloud")))]
+#[get("/users/verifyuser/{email_id}")]
+pub async fn verify_user(
+    email_id: web::Path<String>,
+    Headers(user_email): Headers<UserEmail>,
+) -> Result<HttpResponse, Error> {
+    let email_id = email_id.into_inner().trim().to_lowercase();
+
+    // Security check: only allow users to verify themselves
+    if user_email.user_id.to_lowercase() != email_id {
+        return Ok(HttpResponse::Forbidden().json(meta::http::HttpResponse::error(
+            http::StatusCode::FORBIDDEN,
+            "You can only verify your own user",
+        )));
+    }
+
+    // Get user from database (includes organizations)
+    match crate::service::db::user::get_db_user(&email_id).await {
+        Ok(user) => {
+            let response = serde_json::json!({
+                "status": true,
+                "data": {
+                    "email": user.email,
+                    "first_name": user.first_name,
+                    "last_name": user.last_name,
+                    "is_external": user.is_external,
+                    "organizations": user.organizations.iter().map(|o| {
+                        serde_json::json!({
+                            "name": o.name,
+                            "role": o.role.to_string(),
+                        })
+                    }).collect::<Vec<_>>(),
+                }
+            });
+            Ok(HttpResponse::Ok().json(response))
+        }
+        Err(_) => {
+            // User not found
+            let response = serde_json::json!({
+                "status": false,
+                "message": "User not found"
+            });
+            Ok(HttpResponse::NotFound().json(response))
+        }
+    }
+}
+
+/// VerifyUser - stub for non-visdata, non-enterprise, non-cloud builds
+#[cfg(all(not(feature = "visdata"), not(feature = "enterprise"), not(feature = "cloud")))]
+#[get("/users/verifyuser/{email_id}")]
+pub async fn verify_user(
+    _email_id: web::Path<String>,
+) -> Result<HttpResponse, Error> {
+    Ok(HttpResponse::Forbidden().json("Not Supported"))
+}
+
 #[cfg(test)]
 mod tests {
     use actix_web::{App, test};

@@ -382,6 +382,31 @@ pub async fn update_user(
         let mut custom_roles_need_change = false;
         match existing_user {
             Some(local_user) => {
+                // For visdata feature, check if external user is trying to modify personal info
+                #[cfg(feature = "visdata")]
+                if local_user.is_external {
+                    // Check if user is trying to modify first_name or last_name (compare with actual change)
+                    let trying_to_change_first_name = user.first_name.as_ref()
+                        .map(|name| name != &local_user.first_name)
+                        .unwrap_or(false);
+                    let trying_to_change_last_name = user.last_name.as_ref()
+                        .map(|name| name != &local_user.last_name)
+                        .unwrap_or(false);
+                    let trying_to_change_password = user.new_password.is_some();
+
+                    if trying_to_change_first_name || trying_to_change_last_name || trying_to_change_password {
+                        return Ok(HttpResponse::BadRequest().json(MetaHttpResponse::message(
+                            http::StatusCode::BAD_REQUEST,
+                            "Personal info updates not allowed for external users, please update in identity provider (LDAP/SSO)",
+                        )));
+                    }
+
+                    // For external users, only role updates are allowed
+                    // Continue to process role update below
+                }
+
+                // For non-visdata builds, reject all updates to external users
+                #[cfg(not(feature = "visdata"))]
                 if local_user.is_external {
                     return Ok(HttpResponse::BadRequest().json(MetaHttpResponse::message(
                         http::StatusCode::BAD_REQUEST,
@@ -465,17 +490,28 @@ pub async fn update_user(
                     new_user.last_name = user.last_name.unwrap();
                     is_updated = true;
                 }
-                if user.role.is_some()
+                // For visdata feature, allow role updates for external users
+                // Check if role field has a non-empty value
+                let has_valid_role = user.role.as_ref().map(|r| !r.role.is_empty()).unwrap_or(false);
+                #[cfg(feature = "visdata")]
+                let can_update_role = has_valid_role
+                    && (!update_mode.is_self_update()
+                        || (local_user.role.eq(&UserRole::Admin)
+                            || local_user.role.eq(&UserRole::Editor)
+                            || local_user.role.eq(&UserRole::Viewer)
+                            || local_user.role.eq(&UserRole::Root)));
+                #[cfg(not(feature = "visdata"))]
+                let can_update_role = has_valid_role
                     && !local_user.is_external
                     && (!update_mode.is_self_update()
                         || (local_user.role.eq(&UserRole::Admin)
                             // Editor can update other's roles, but viewer can update only self
                             || local_user.role.eq(&UserRole::Editor)
                             || local_user.role.eq(&UserRole::Viewer)
-                            || local_user.role.eq(&UserRole::Root)))
+                            || local_user.role.eq(&UserRole::Root)));
                 // if the User Role is Root, we do not change the Role
                 // Admins Role can still be mutable.
-                {
+                if can_update_role {
                     let new_org_role = UserOrgRole::from(&user.role.unwrap());
                     old_role = Some(new_user.role);
                     new_user.role = new_org_role.base_role;

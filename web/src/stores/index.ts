@@ -98,7 +98,7 @@ export default createStore({
     // These are the application's default colors used as fallback when no custom colors are set
     // Centralized here so they can be updated in one place instead of duplicating across components
     defaultThemeColors: {
-      light: "#3F7994",  // Default light mode color (Blue)
+      light: "#083090",  // Default light mode color (MVS Blue)
       dark: "#5B9FBE",   // Default dark mode color (Light Blue)
     },
     // Temporary theme colors for live preview in General Settings

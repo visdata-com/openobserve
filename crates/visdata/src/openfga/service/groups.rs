@@ -109,10 +109,11 @@ pub async fn get_group(org_id: &str, group_name: &str) -> Result<GroupResponse> 
         .collect();
 
     // Get all roles assigned to the group
-    let group_member = format!("{}#member", group_object);
+    // Note: Uses "grp_assigned" relation to match the OpenFGA model in store.yaml
+    let group_object_ref = group_object.clone();
     let role_filter = TupleKeyFilter {
-        user: Some(group_member),
-        relation: Some("assignee".to_string()),
+        user: Some(group_object_ref),
+        relation: Some("grp_assigned".to_string()),
         object: None,
     };
 
@@ -298,9 +299,10 @@ pub async fn get_user_roles(org_id: &str, user_email: &str) -> Result<Vec<String
     let user = schema::user_type(user_email);
 
     // Get directly assigned roles
+    // Note: Uses "assigned" to match the OpenFGA model in store.yaml
     let direct_filter = TupleKeyFilter {
         user: Some(user.clone()),
-        relation: Some("assignee".to_string()),
+        relation: Some("assigned".to_string()),
         object: None,
     };
 
@@ -319,11 +321,11 @@ pub async fn get_user_roles(org_id: &str, user_email: &str) -> Result<Vec<String
 
     for group_name in groups {
         let group_object = schema::group_type(org_id, &group_name);
-        let group_member = format!("{}#member", group_object);
 
+        // Note: Uses "grp_assigned" to match the OpenFGA model in store.yaml
         let group_role_filter = TupleKeyFilter {
-            user: Some(group_member),
-            relation: Some("assignee".to_string()),
+            user: Some(group_object),
+            relation: Some("grp_assigned".to_string()),
             object: None,
         };
 

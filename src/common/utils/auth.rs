@@ -729,6 +729,8 @@ impl FromRequest for AuthExtractor {
                 // service_streams APIs are org-level, not stream-specific
                 || path.contains("/service_streams/_analytics")
                 || path.contains("/service_streams/_correlate")
+                // alerts deduplication config APIs are org-level settings
+                || path.contains("/alerts/deduplication/")
                 {
                     return Ok(AuthExtractor {
                         auth: auth_str.to_owned(),
@@ -835,7 +837,55 @@ impl FromRequest for AuthExtractor {
         })
     }
 
-    #[cfg(not(feature = "enterprise"))]
+    #[cfg(all(feature = "visdata", not(feature = "enterprise")))]
+    fn from_request(req: &HttpRequest, _: &mut Payload) -> Self::Future {
+        let req = req.clone();
+        Box::pin(async move {
+            let auth_str = if let Some(cookie) = req.cookie("auth_tokens") {
+                let val = config::utils::base64::decode_raw(cookie.value()).unwrap_or_default();
+                let auth_tokens: AuthTokens =
+                    json::from_str(std::str::from_utf8(&val).unwrap_or_default())
+                        .unwrap_or_default();
+                let access_token = auth_tokens.access_token;
+                if access_token.starts_with("Basic") || access_token.starts_with("Bearer") {
+                    access_token
+                } else if access_token.starts_with("session") {
+                    // For SSO (visdata feature), get the real JWT token from session store
+                    let session_key = access_token.strip_prefix("session ").unwrap().to_string();
+                    match crate::service::db::session::get(&session_key).await {
+                        Ok(token) => format!("Bearer {token}"),
+                        Err(_) => access_token,
+                    }
+                } else {
+                    format!("Bearer {access_token}")
+                }
+            } else if let Some(auth_header) = req.headers().get("Authorization") {
+                if let Ok(auth_str) = auth_header.to_str() {
+                    auth_str.to_owned()
+                } else {
+                    "".to_string()
+                }
+            } else {
+                "".to_string()
+            };
+
+            // if let Some(auth_header) = req.headers().get("Authorization") {
+            if !auth_str.is_empty() {
+                return Ok(AuthExtractor {
+                    auth: auth_str.to_owned(),
+                    method: "".to_string(),
+                    o2_type: "".to_string(),
+                    org_id: "".to_string(),
+                    bypass_check: true, // bypass check permissions
+                    parent_id: "".to_string(),
+                });
+            }
+
+            Err(actix_web::error::ErrorUnauthorized("Unauthorized Access"))
+        })
+    }
+
+    #[cfg(not(any(feature = "enterprise", feature = "visdata")))]
     fn from_request(req: &HttpRequest, _: &mut Payload) -> Self::Future {
         let req = req.clone();
         Box::pin(async move {

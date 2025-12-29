@@ -43,6 +43,18 @@ use {
     },
 };
 
+// Visdata audit middleware imports
+#[cfg(all(feature = "visdata", not(feature = "enterprise")))]
+use {
+    crate::{common::meta::ingestion::INGESTION_EP, service::self_reporting::audit},
+    actix_http::h1::Payload,
+    actix_web::{HttpMessage, web::BytesMut},
+    base64::{Engine as _, engine::general_purpose},
+    config::utils::time::now_micros,
+    futures::StreamExt,
+    visdata::meta::audit::{AuditMessage, Protocol, ResponseMeta, is_audit_enabled},
+};
+
 use super::request::*;
 use crate::{
     common::meta::{middleware_data::RumExtraData, proxy::PathParamProxyURL},
@@ -74,6 +86,7 @@ pub fn get_cors() -> Rc<Cors> {
     Rc::new(cors)
 }
 
+// Enterprise audit middleware
 #[cfg(feature = "enterprise")]
 async fn audit_middleware(
     mut req: ServiceRequest,
@@ -163,7 +176,95 @@ async fn audit_middleware(
     }
 }
 
-#[cfg(not(feature = "enterprise"))]
+// Visdata audit middleware (same logic as enterprise, using visdata types)
+#[cfg(all(feature = "visdata", not(feature = "enterprise")))]
+async fn audit_middleware(
+    mut req: ServiceRequest,
+    next: middleware::Next<impl MessageBody>,
+) -> Result<ServiceResponse<impl MessageBody>, actix_web::Error> {
+    let method = req.method().to_string();
+    let prefix = format!("{}/api/", get_config().common.base_uri);
+    let path = req.path().strip_prefix(&prefix).unwrap().to_string();
+    let path_columns = path.split('/').collect::<Vec<&str>>();
+    let path_len = path_columns.len();
+    if is_audit_enabled()
+        && !(path_columns.get(1).unwrap_or(&"").to_string().eq("ws")
+        || path_columns.get(1).unwrap_or(&"").to_string().ends_with("_stream") // skip for http2 streams
+        || path.ends_with("ai/chat_stream") // skip for ai
+        || (method.eq("POST") && INGESTION_EP.contains(&path_columns[path_len - 1])))
+    {
+        let query_params = req.query_string().to_string();
+        let org_id = {
+            let org = path_columns[0];
+            if org.eq("organizations") {
+                "".to_string()
+            } else {
+                org.to_string()
+            }
+        };
+
+        let mut request_body = BytesMut::new();
+        let mut payload_stream = req.take_payload();
+        while let Some(chunk) = payload_stream.next().await {
+            request_body.extend_from_slice(&chunk.unwrap());
+        }
+        let user_email = req
+            .headers()
+            .get("user_id")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
+
+        // Put the payload back into the req
+        let (_, mut payload) = Payload::create(true);
+        payload.unread_data(request_body.clone().into());
+        req.set_payload(payload.into());
+
+        // Call the next service in the chain
+        let mut res = next.call(req).await?;
+
+        if res.response().error().is_none() {
+            let body = if path.ends_with("/settings/logo") {
+                // Binary data, encode it with base64
+                general_purpose::STANDARD.encode(&request_body)
+            } else {
+                String::from_utf8(request_body.to_vec()).unwrap_or_default()
+            };
+            let error_header = res.response().headers().get(ERROR_HEADER);
+            let error_msg = error_header
+                .map(|error_header| error_header.to_str().unwrap_or_default().to_string());
+            // Remove the error header from the response
+            res.headers_mut().remove(ERROR_HEADER);
+
+            audit(AuditMessage {
+                user_email,
+                org_id,
+                _timestamp: now_micros(),
+                protocol: Protocol::Http,
+                response_meta: ResponseMeta {
+                    http_method: method,
+                    http_path: path,
+                    http_body: body,
+                    http_query_params: query_params,
+                    http_response_code: res.response().status().as_u16(),
+                    error_msg,
+                    trace_id: None,
+                },
+            })
+            .await;
+        }
+        Ok(res)
+    } else {
+        // Remove the error header from the response if it exists
+        let mut res = next.call(req).await?;
+        res.headers_mut().remove(ERROR_HEADER);
+        Ok(res)
+    }
+}
+
+// Default audit middleware (no-op when neither enterprise nor visdata)
+#[cfg(all(not(feature = "enterprise"), not(feature = "visdata")))]
 async fn audit_middleware(
     req: ServiceRequest,
     next: middleware::Next<impl MessageBody>,
@@ -339,13 +440,31 @@ pub fn get_basic_routes(svc: &mut web::ServiceConfig) {
     }
 }
 
-#[cfg(not(feature = "enterprise"))]
+// Non-enterprise, non-visdata config routes
+#[cfg(all(not(feature = "enterprise"), not(feature = "visdata")))]
 pub fn get_config_routes(svc: &mut web::ServiceConfig) {
     let cors = get_cors();
     svc.service(
         web::scope("/config")
             .wrap(cors.clone())
             .service(status::zo_config)
+            .service(status::logout)
+            .service(status::config_runtime)
+            .service(web::scope("/reload").service(status::config_reload)),
+    );
+}
+
+// Visdata config routes (with Dex SSO support)
+#[cfg(all(feature = "visdata", not(feature = "enterprise")))]
+pub fn get_config_routes(svc: &mut web::ServiceConfig) {
+    let cors = get_cors();
+    svc.service(
+        web::scope("/config")
+            .wrap(cors.clone())
+            .service(status::zo_config)
+            .service(status::redirect)
+            .service(status::dex_login)
+            .service(status::refresh_token_with_dex)
             .service(status::logout)
             .service(status::config_runtime)
             .service(web::scope("/reload").service(status::config_reload)),
@@ -399,6 +518,7 @@ pub fn get_service_routes(svc: &mut web::ServiceConfig) {
         .service(users::list_invitations)
         .service(users::decline_invitation)
         .service(users::list_roles)
+        .service(users::verify_user)
         .service(organization::org::organizations)
         .service(organization::settings::get)
         .service(organization::settings::create)
@@ -620,8 +740,11 @@ pub fn get_service_routes(svc: &mut web::ServiceConfig) {
         .service(domain_management::set_domain_management_config)
         .service(license::get_license_info)
         .service(license::store_license)
-        .service(traces::get_current_topology)
-        .service(patterns::extract_patterns);
+        .service(traces::get_current_topology);
+
+    // Patterns route - available for both enterprise and visdata features
+    #[cfg(any(feature = "enterprise", feature = "visdata"))]
+    let service = service.service(patterns::extract_patterns);
 
     // RBAC routes - only register when visdata is NOT enabled (use enterprise/community version)
     #[cfg(not(feature = "visdata"))]

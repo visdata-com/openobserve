@@ -221,7 +221,162 @@ pub async fn get_user_name_from_token(auth_str: &str) -> Option<String> {
     }
 }
 
-#[cfg(not(feature = "enterprise"))]
+/// Token validator for visdata feature (using Dex SSO when enabled)
+#[cfg(all(feature = "visdata", not(feature = "enterprise")))]
+pub async fn token_validator(
+    req: ServiceRequest,
+    auth_info: AuthExtractor,
+) -> Result<ServiceRequest, (Error, ServiceRequest)> {
+    use actix_web::{
+        error::{ErrorForbidden, ErrorUnauthorized},
+        http::{Method, header},
+    };
+
+    use super::validator::check_permissions;
+    use crate::common::utils::auth::V2_API_PREFIX;
+    use crate::service::{db, users};
+
+    // Check if SSO is enabled
+    if !visdata::config::is_sso_enabled().await {
+        return Err((ErrorForbidden("SSO is not enabled"), req));
+    }
+
+    let user;
+
+    // Use visdata's token verification
+    let token = auth_info.auth.strip_prefix("Bearer").unwrap().trim();
+    log::debug!(
+        "[visdata] Token validator: token length={}, first 50 chars={}",
+        token.len(),
+        &token[..token.len().min(50)]
+    );
+    let verify_result = visdata::dex::service::token::verify_token(token).await;
+
+    let path = match req
+        .request()
+        .path()
+        .strip_prefix(format!("{}/api/", config::get_config().common.base_uri).as_str())
+    {
+        Some(path) => path,
+        None => req.request().path(),
+    };
+    let path_columns = path.split('/').collect::<Vec<&str>>();
+
+    match verify_result {
+        Ok(res) => {
+            let user_id = &res.user_email;
+            if res.is_valid {
+                // Check for special endpoints that don't require org membership
+                let is_list_invite_call = path_columns.len() <= 2
+                    && path_columns.first().is_some_and(|p| p.eq(&"invites"))
+                    && (auth_info.method.eq("GET") || auth_info.method.eq("DELETE"));
+
+                // Check for users/verifyuser endpoint - this should pass without org check
+                let is_verify_user = path_columns.len() >= 2
+                    && path_columns.first().is_some_and(|p| p.eq(&"users"))
+                    && path_columns.get(1).is_some_and(|p| p.eq(&"verifyuser"));
+
+                let path_suffix = path_columns.last().unwrap_or(&"");
+                if path_suffix.eq(&"organizations")
+                    || path_suffix.eq(&"clusters")
+                    || is_list_invite_call
+                    || is_verify_user
+                {
+                    let db_user = db::user::get_db_user(user_id).await;
+                    user = match db_user {
+                        Ok(user) => {
+                            let all_users = user.get_all_users();
+                            if all_users.is_empty() {
+                                None
+                            } else {
+                                all_users.first().cloned()
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("[visdata] Error getting user in token validator: {e}");
+                            None
+                        }
+                    }
+                } else {
+                    user = match path.find('/') {
+                        Some(index) => {
+                            let org_id =
+                                if path_columns.len() > 1 && path_columns[0].eq(V2_API_PREFIX) {
+                                    path_columns[1]
+                                } else {
+                                    &path[0..index]
+                                };
+                            users::get_user(Some(org_id), user_id).await
+                        }
+                        None => {
+                            if path_columns.len() == 1 && path_columns[0] == "license" {
+                                users::get_user(Some("_meta"), user_id).await
+                            } else {
+                                users::get_user(None, user_id).await
+                            }
+                        }
+                    }
+                };
+
+                match user {
+                    // For verify_user and invite calls, allow even if user doesn't exist in org
+                    None if (is_list_invite_call || is_verify_user) => {
+                        let mut req = req;
+                        if req.method().eq(&Method::POST)
+                            && !req.headers().contains_key("content-type")
+                        {
+                            req.headers_mut().insert(
+                                header::CONTENT_TYPE,
+                                header::HeaderValue::from_static(
+                                    "application/x-www-form-urlencoded",
+                                ),
+                            );
+                        }
+                        req.headers_mut().insert(
+                            header::HeaderName::from_static("user_id"),
+                            header::HeaderValue::from_str(&res.user_email).unwrap(),
+                        );
+                        Ok(req)
+                    }
+                    Some(user) => {
+                        let mut req = req;
+                        if req.method().eq(&Method::POST)
+                            && !req.headers().contains_key("content-type")
+                        {
+                            req.headers_mut().insert(
+                                header::CONTENT_TYPE,
+                                header::HeaderValue::from_static(
+                                    "application/x-www-form-urlencoded",
+                                ),
+                            );
+                        }
+                        req.headers_mut().insert(
+                            header::HeaderName::from_static("user_id"),
+                            header::HeaderValue::from_str(&res.user_email).unwrap(),
+                        );
+                        if auth_info.bypass_check
+                            || check_permissions(user_id, auth_info, user.role, user.is_external)
+                                .await
+                        {
+                            Ok(req)
+                        } else {
+                            Err((ErrorForbidden("Unauthorized Access"), req))
+                        }
+                    }
+                    _ => Err((ErrorForbidden("Unauthorized Access"), req)),
+                }
+            } else {
+                Err((ErrorForbidden("Unauthorized Access"), req))
+            }
+        }
+        Err(err) => {
+            log::error!("[visdata] Token verification failed: {}", err);
+            Err((ErrorUnauthorized(format!("Token verification failed: {}", err)), req))
+        }
+    }
+}
+
+#[cfg(all(not(feature = "enterprise"), not(feature = "visdata")))]
 pub async fn token_validator(
     req: ServiceRequest,
     _token: AuthExtractor,

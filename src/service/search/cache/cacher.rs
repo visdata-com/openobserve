@@ -828,18 +828,29 @@ pub async fn delete_cache(
     }
 
     for file in remove_files {
-        let columns = file
+        // Normalize path separators for cross-platform compatibility
+        let normalized_path = file
             .strip_prefix(&prefix)
             .unwrap()
+            .replace('\\', "/");
+        let columns = normalized_path
             .split('/')
             .collect::<Vec<&str>>();
 
-        let query_key = format!(
-            "{}_{}_{}_{}",
-            columns[1], columns[2], columns[3], columns[4]
-        );
-        let mut r = QUERY_RESULT_CACHE.write().await;
-        r.remove(&query_key);
+        // Ensure we have enough path components before accessing
+        if columns.len() >= 5 {
+            let query_key = format!(
+                "{}_{}_{}_{}",
+                columns[1], columns[2], columns[3], columns[4]
+            );
+            let mut r = QUERY_RESULT_CACHE.write().await;
+            r.remove(&query_key);
+        } else {
+            log::warn!(
+                "Unexpected cache path format: {}, columns: {:?}",
+                file, columns
+            );
+        }
     }
     Ok(true)
 }

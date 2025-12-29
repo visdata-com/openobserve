@@ -78,11 +78,13 @@ pub fn get_add_user_to_org_tuples(
 /// Get tuple for assigning a custom role to a user
 ///
 /// Compatible with o2_openfga::authorizer::authz::get_user_crole_tuple
+///
+/// Note: Uses "assigned" relation to match the OpenFGA model definition in store.yaml
 pub fn get_user_crole_tuple(org_id: &str, role_name: &str, user_email: &str) -> TupleKey {
     let user = schema::user_type(user_email);
     let role = schema::role_type(org_id, role_name);
 
-    TupleKey::new(&user, "assignee", &role)
+    TupleKey::new(&user, "assigned", &role)
 }
 
 /// Get the full role key for an organization and role name
@@ -95,14 +97,16 @@ pub fn get_role_key(org_id: &str, role_name: &str) -> String {
 /// Get tuples for removing a user from a custom role
 ///
 /// Compatible with o2_openfga::authorizer::roles::get_user_crole_removal_tuples
+///
+/// Note: Uses "assigned" relation to match the OpenFGA model definition in store.yaml
 pub fn get_user_crole_removal_tuples(
     user_email: &str,
     role_key: &str,
     tuples: &mut Vec<TupleKey>,
 ) {
     let user = schema::user_type(user_email);
-    // Remove user from role assignee relation
-    tuples.push(TupleKey::new(&user, "assignee", role_key));
+    // Remove user from role assigned relation
+    tuples.push(TupleKey::new(&user, "assigned", role_key));
 }
 
 /// Get tuples for organization creation
@@ -142,6 +146,8 @@ pub fn get_resource_parent_tuple(
 
 /// Get tuple for organization-wide resource permission
 /// This grants permission to all resources of a type in an org
+///
+/// Note: Uses "has" relation to match the OpenFGA model in store.yaml
 pub fn get_org_resource_permission_tuple(
     org_id: &str,
     resource_type: &str,
@@ -149,21 +155,21 @@ pub fn get_org_resource_permission_tuple(
     permission: &str,
 ) -> TupleKey {
     let role = schema::role_type(org_id, role_name);
-    let role_assignee = format!("{}#assignee", role);
+    let role_has = format!("{}#has", role);
     let resource = schema::resource_object_all(org_id, resource_type);
 
-    // Map permission to relation
+    // Map permission to relation (use ALLOW_* format to match store.yaml)
     let relation = match permission.to_lowercase().as_str() {
-        "allowall" | "admin" => "admin",
-        "allowget" | "can_read" => "can_read",
-        "allowlist" | "can_list" => "can_list",
-        "allowpost" | "can_create" => "can_create",
-        "allowput" | "can_update" => "can_update",
-        "allowdelete" | "can_delete" => "can_delete",
-        _ => "can_read",
+        "allowall" | "admin" => "ALLOW_ALL",
+        "allowget" | "can_read" => "ALLOW_GET",
+        "allowlist" | "can_list" => "ALLOW_LIST",
+        "allowpost" | "can_create" => "ALLOW_POST",
+        "allowput" | "can_update" => "ALLOW_PUT",
+        "allowdelete" | "can_delete" => "ALLOW_DELETE",
+        _ => "ALLOW_GET",
     };
 
-    TupleKey::new(&role_assignee, relation, &resource)
+    TupleKey::new(&role_has, relation, &resource)
 }
 
 /// Get tuple for adding user to a group
@@ -175,12 +181,14 @@ pub fn get_group_member_tuple(org_id: &str, group_name: &str, user_email: &str) 
 }
 
 /// Get tuple for assigning a role to a group
+///
+/// Note: Uses "grp_assigned" relation to match the OpenFGA model in store.yaml
 pub fn get_group_role_tuple(org_id: &str, group_name: &str, role_name: &str) -> TupleKey {
     let group = schema::group_type(org_id, group_name);
-    let group_member = format!("{}#member", group);
     let role = schema::role_type(org_id, role_name);
 
-    TupleKey::new(&group_member, "assignee", &role)
+    // group -> grp_assigned -> role (not group#member -> assignee)
+    TupleKey::new(&group, "grp_assigned", &role)
 }
 
 /// Get tuple for service account creation
@@ -189,6 +197,31 @@ pub fn get_service_account_creation_tuple(org_id: &str, email: &str, tuples: &mu
     let org = schema::org_type(org_id);
 
     // Service accounts are members of the organization
+    tuples.push(TupleKey::new(&user, "allowed_user", &org));
+    // Add org_context for the intersection to work
+    tuples.push(TupleKey::new(&user, "org_context", &org));
+}
+
+/// Get tuples for new user creation
+///
+/// Compatible with o2_openfga::authorizer::authz::get_new_user_creation_tuple
+///
+/// This function creates basic tuples for a new user to access the system.
+/// It adds the user to the default organization with user role and org_context,
+/// allowing the user to call organization API endpoints.
+///
+/// Note: This uses the default org from DexConfig. The caller should have already
+/// created the organization before calling this function.
+pub fn get_new_user_creation_tuple(user_email: &str, tuples: &mut Vec<TupleKey>) {
+    // Get default org from visdata config
+    let default_org = crate::Visdata::try_global()
+        .map(|v| v.dex_config().default_org.clone())
+        .unwrap_or_else(|| "default".to_string());
+
+    let user = schema::user_type(user_email);
+    let org = schema::org_type(&default_org);
+
+    // Add user as allowed_user of the default org (basic user access)
     tuples.push(TupleKey::new(&user, "allowed_user", &org));
     // Add org_context for the intersection to work
     tuples.push(TupleKey::new(&user, "org_context", &org));
@@ -309,7 +342,7 @@ mod tests {
         let tuple = get_user_crole_tuple("default", "developer", "bob@example.com");
 
         assert_eq!(tuple.user, "user:bob@example.com");
-        assert_eq!(tuple.relation, "assignee");
+        assert_eq!(tuple.relation, "assigned");
         assert_eq!(tuple.object, "role:default_developer");
     }
 

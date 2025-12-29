@@ -51,6 +51,10 @@ use crate::{
     service::self_reporting::audit,
 };
 
+// Visdata log patterns support
+#[cfg(all(feature = "visdata", not(feature = "enterprise")))]
+use visdata::log_patterns;
+
 pub mod cache;
 pub mod execution;
 pub mod sorting;
@@ -154,6 +158,70 @@ pub async fn process_search_stream_request(
 
         (
             Some(o2_enterprise::enterprise::log_patterns::PatternAccumulator::new(config.clone())),
+            Some(config),
+        )
+    } else {
+        (None, None)
+    };
+
+    // Initialize pattern accumulator for visdata (when enterprise is not enabled)
+    #[cfg(all(feature = "visdata", not(feature = "enterprise")))]
+    let (pattern_accumulator, pattern_config) = if extract_patterns {
+        log::info!("[HTTP2_STREAM trace_id {trace_id}] Pattern extraction enabled (visdata)");
+
+        // Get FTS fields from stream settings for all streams being searched
+        let mut all_fts_fields = Vec::new();
+        for stream_name in &stream_names {
+            if let Ok(schema) = infra::schema::get(&org_id, stream_name, stream_type).await {
+                let stream_settings = infra::schema::unwrap_stream_settings(&schema);
+                let fts_fields = infra::schema::get_stream_setting_fts_fields(&stream_settings);
+                all_fts_fields.extend(fts_fields);
+            }
+        }
+
+        // Deduplicate FTS fields
+        all_fts_fields.sort();
+        all_fts_fields.dedup();
+
+        log::info!(
+            "[HTTP2_STREAM trace_id {trace_id}] Using FTS fields for pattern extraction: {:?}",
+            all_fts_fields
+        );
+
+        // Get configuration from visdata config
+        let visdata_cfg = visdata::config::get_config().await;
+        let zo_config = config::get_config();
+
+        // Determine max_logs
+        let max_logs = if req.query.size > 0 && req.query.size < 10_000_000 {
+            req.query.size as usize
+        } else if visdata_cfg.log_patterns_max_logs > 0 {
+            visdata_cfg.log_patterns_max_logs
+        } else {
+            zo_config.limit.query_default_limit as usize
+        };
+
+        log::info!(
+            "[HTTP2_STREAM trace_id {trace_id}] Pattern extraction config (visdata): max_logs={}, min_cluster={}, threshold={}",
+            max_logs,
+            visdata_cfg.log_patterns_min_cluster_size,
+            visdata_cfg.log_patterns_similarity_threshold
+        );
+
+        // Create config with stream-specific FTS fields
+        let config = log_patterns::PatternExtractionConfig {
+            max_logs_for_extraction: max_logs,
+            min_cluster_size: visdata_cfg.log_patterns_min_cluster_size,
+            similarity_threshold: visdata_cfg.log_patterns_similarity_threshold,
+            xdrain_depth: visdata_cfg.log_patterns_drain_depth,
+            xdrain_max_child: visdata_cfg.log_patterns_drain_max_child,
+            max_clusters: visdata_cfg.log_patterns_max_clusters,
+            min_field_length: 1,
+            fts_fields: all_fts_fields,
+        };
+
+        (
+            Some(log_patterns::PatternAccumulator::new(config.clone())),
             Some(config),
         )
     } else {
@@ -700,6 +768,89 @@ pub async fn process_search_stream_request(
         } else {
             log::info!(
                 "[HTTP2_STREAM trace_id {trace_id}] No logs accumulated for pattern extraction"
+            );
+        }
+    }
+
+    // Extract patterns if requested (visdata feature - when enterprise is not enabled)
+    #[cfg(all(feature = "visdata", not(feature = "enterprise")))]
+    if let Some(mut accumulator) = pattern_accumulator {
+        log::info!(
+            "[HTTP2_STREAM trace_id {trace_id}] Extracting patterns from {} accumulated results (visdata)",
+            accumulated_results.len()
+        );
+
+        // Calculate total scan_records from all search results (actual logs scanned with sampling)
+        let mut total_scan_records = 0;
+
+        // Convert accumulated_results to hits for pattern extraction
+        for result in &accumulated_results {
+            let response = match result {
+                SearchResultType::Search(r) => r,
+                SearchResultType::Cached(r) => r,
+            };
+            accumulator.add_hits(&response.hits);
+            total_scan_records += response.scan_records;
+        }
+
+        let stats = accumulator.stats();
+        log::info!(
+            "[HTTP2_STREAM trace_id {trace_id}] Pattern accumulator stats (visdata): {} logs accumulated from {} seen by accumulator, {} total scanned with sampling (sampled: {})",
+            stats.accumulated_logs,
+            stats.total_logs_seen,
+            total_scan_records,
+            stats.was_sampled
+        );
+
+        // Extract patterns if we have logs
+        if stats.accumulated_logs > 0 {
+            match log_patterns::extract_patterns_from_stream(
+                accumulator,
+                all_streams.clone(),
+                pattern_config.unwrap(),
+                stats.total_logs_seen, // Use actual logs seen, not file metadata
+            )
+            .await
+            {
+                Ok(patterns_response) => {
+                    // Convert to JSON and send
+                    match config::utils::json::to_value(&patterns_response) {
+                        Ok(patterns_json) => {
+                            log::info!(
+                                "[HTTP2_STREAM trace_id {trace_id}] Sending {} patterns (visdata)",
+                                patterns_response.patterns.len()
+                            );
+                            if sender
+                                .send(Ok(config::meta::search::StreamResponses::PatternExtractionResult {
+                                    patterns: patterns_json,
+                                }))
+                                .await
+                                .is_err()
+                            {
+                                log::warn!(
+                                    "[HTTP2_STREAM trace_id {trace_id}] Sender closed, could not send pattern results"
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            log::error!(
+                                "[HTTP2_STREAM trace_id {trace_id}] Failed to serialize patterns: {}",
+                                e
+                            );
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::error!(
+                        "[HTTP2_STREAM trace_id {trace_id}] Pattern extraction failed (visdata): {} (continuing with search results)",
+                        e
+                    );
+                    // Non-fatal: search results were already sent
+                }
+            }
+        } else {
+            log::info!(
+                "[HTTP2_STREAM trace_id {trace_id}] No logs accumulated for pattern extraction (visdata)"
             );
         }
     }

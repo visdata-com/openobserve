@@ -53,7 +53,7 @@ impl Default for DexConfig {
             client_id: "openobserve".to_string(),
             client_secret: String::new(),
             issuer_url: "http://localhost:5556".to_string(),
-            redirect_uri: "http://localhost:5080/auth/callback".to_string(),
+            redirect_uri: "http://localhost:5080/config/redirect".to_string(),
             default_org: "default".to_string(),
             default_role: "viewer".to_string(),
             native_login_enabled: true,

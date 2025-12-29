@@ -57,8 +57,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           "
           :src="
             store.state.theme == 'dark'
-              ? getImageURL('images/common/openobserve_latest_dark_2.svg')
-              : getImageURL('images/common/openobserve_latest_light_2.svg')
+              ? getImageURL('images/common/mvs_logo_dark.png')
+              : getImageURL('images/common/mvs_logo_light.png')
           "
         />
       </div>
@@ -73,8 +73,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           "
           :src="
             store.state.theme == 'dark'
-              ? getImageURL('images/common/openobserve_latest_dark_2.svg')
-              : getImageURL('images/common/openobserve_latest_light_2.svg')
+              ? getImageURL('images/common/mvs_logo_dark.png')
+              : getImageURL('images/common/mvs_logo_light.png')
           "
         />
       </div>

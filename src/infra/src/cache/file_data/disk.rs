@@ -312,31 +312,36 @@ impl FileData {
             }
 
             if key.starts_with("results/") {
-                let columns = key.split('/').collect::<Vec<&str>>();
-                let query_key = format!(
-                    "{}_{}_{}_{}",
-                    columns[1], columns[2], columns[3], columns[4]
-                );
-                remove_result_files.push(query_key);
+                // Normalize path separators for cross-platform compatibility
+                let normalized_key = key.replace('\\', "/");
+                let columns = normalized_key.split('/').collect::<Vec<&str>>();
+                if columns.len() >= 5 {
+                    let query_key = format!(
+                        "{}_{}_{}_{}",
+                        columns[1], columns[2], columns[3], columns[4]
+                    );
+                    remove_result_files.push(query_key);
+                }
             }
             // metrics
-            let columns = key.split('/').collect::<Vec<&str>>();
-            if columns[0] == "files" {
+            let normalized_key = key.replace('\\', "/");
+            let columns = normalized_key.split('/').collect::<Vec<&str>>();
+            if columns.len() >= 3 && columns[0] == "files" {
                 metrics::QUERY_DISK_CACHE_FILES
                     .with_label_values(&[columns[1], columns[2]])
                     .dec();
                 metrics::QUERY_DISK_CACHE_USED_BYTES
                     .with_label_values(&[columns[1], columns[2]])
                     .sub(data_size as i64);
-            } else if columns[0] == "results" {
+            } else if columns.len() >= 3 && columns[0] == "results" {
                 metrics::QUERY_DISK_RESULT_CACHE_USED_BYTES
                     .with_label_values(&[columns[1], columns[2], "results"])
                     .sub(data_size as i64);
-            } else if columns[0] == "metrics_results" {
+            } else if columns.len() >= 2 && columns[0] == "metrics_results" {
                 metrics::QUERY_DISK_METRICS_CACHE_USED_BYTES
                     .with_label_values(&[columns[1]])
                     .sub(data_size as i64);
-            } else if columns[0] == "aggregations" && columns.len() >= 3 {
+            } else if columns.len() >= 3 && columns[0] == "aggregations" {
                 metrics::QUERY_DISK_RESULT_CACHE_USED_BYTES
                     .with_label_values(&[columns[1], columns[2], "aggregations"])
                     .sub(data_size as i64);
@@ -385,24 +390,25 @@ impl FileData {
             );
         }
 
-        // metrics
-        let columns = key.split('/').collect::<Vec<&str>>();
-        if columns[0] == "files" {
+        // metrics - normalize path separators for cross-platform compatibility
+        let normalized_key = key.replace('\\', "/");
+        let columns = normalized_key.split('/').collect::<Vec<&str>>();
+        if columns.len() >= 3 && columns[0] == "files" {
             metrics::QUERY_DISK_CACHE_FILES
                 .with_label_values(&[columns[1], columns[2]])
                 .dec();
             metrics::QUERY_DISK_CACHE_USED_BYTES
                 .with_label_values(&[columns[1], columns[2]])
                 .sub(data_size as i64);
-        } else if columns[0] == "results" {
+        } else if columns.len() >= 3 && columns[0] == "results" {
             metrics::QUERY_DISK_RESULT_CACHE_USED_BYTES
                 .with_label_values(&[columns[1], columns[2], "results"])
                 .sub(data_size as i64);
-        } else if columns[0] == "metrics_results" {
+        } else if columns.len() >= 2 && columns[0] == "metrics_results" {
             metrics::QUERY_DISK_METRICS_CACHE_USED_BYTES
                 .with_label_values(&[columns[1]])
                 .sub(data_size as i64);
-        } else if columns[0] == "aggregations" && columns.len() >= 3 {
+        } else if columns.len() >= 3 && columns[0] == "aggregations" {
             metrics::QUERY_DISK_RESULT_CACHE_USED_BYTES
                 .with_label_values(&[columns[1], columns[2], "aggregations"])
                 .sub(data_size as i64);

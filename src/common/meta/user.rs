@@ -410,7 +410,8 @@ impl From<&UserRoleRequest> for UserOrgRole {
         let mut custom_role = role.custom.clone();
         let mut is_role_name_standard = false;
         for user_role in get_roles() {
-            if user_role.to_string().eq(&role.role) {
+            // Use case-insensitive comparison to handle frontend sending "Editor" vs backend "editor"
+            if user_role.to_string().eq_ignore_ascii_case(&role.role) {
                 standard_role = user_role;
                 is_role_name_standard = true;
                 break;

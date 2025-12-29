@@ -10,6 +10,7 @@
 //! This module provides:
 //! - Dex (Authentication) with Dex integration for SSO
 //! - OpenFGA (Authorization) with OpenFGA integration for fine-grained access control
+//! - Log Patterns (Analysis) with Drain algorithm for log pattern extraction
 //!
 //! ## Architecture (compatible with o2_enterprise)
 //!
@@ -32,6 +33,13 @@
 //! │   ├── service       # Internal service layer
 //! │   └── types         # Request/Response types
 //! │
+//! ├── log_patterns/     # Log pattern extraction (compatible with o2_enterprise::log_patterns)
+//! │   ├── config        # PatternExtractionConfig
+//! │   ├── accumulator   # PatternAccumulator
+//! │   ├── extractor     # Drain algorithm implementation
+//! │   ├── sdr           # SDR type recognition (IP, NUM, UUID, etc.)
+//! │   └── types         # Pattern, Statistics types
+//! │
 //! ├── enterprise/       # Enterprise compatibility layer
 //! │   └── common        # Enterprise config utilities
 //! │
@@ -40,13 +48,15 @@
 //! ```
 
 // ============================================================================
-// Enterprise Modules (OpenFGA + Dex)
+// Enterprise Modules (OpenFGA + Dex + Log Patterns)
 // ============================================================================
 
 pub mod common;
 pub mod config;
 pub mod dex;
 pub mod enterprise;
+pub mod log_patterns;
+pub mod meta;
 pub mod openfga;
 
 // ============================================================================

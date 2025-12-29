@@ -36,9 +36,15 @@ use config::{
 };
 #[cfg(feature = "enterprise")]
 use o2_enterprise::enterprise::common::auditor;
-#[cfg(feature = "enterprise")]
+#[cfg(any(feature = "enterprise", feature = "visdata"))]
 use proto::cluster_rpc;
 use tokio::sync::oneshot;
+
+// Visdata audit imports
+#[cfg(all(feature = "visdata", not(feature = "enterprise")))]
+use config::META_ORG_ID;
+#[cfg(all(feature = "visdata", not(feature = "enterprise")))]
+use visdata::meta::audit as visdata_auditor;
 
 #[cfg(feature = "cloud")]
 pub mod cloud_events;
@@ -360,6 +366,8 @@ pub async fn flush() {
     // flush audit data
     #[cfg(feature = "enterprise")]
     flush_audit().await;
+    #[cfg(all(feature = "visdata", not(feature = "enterprise")))]
+    flush_audit().await;
 
     let cfg = get_config();
 
@@ -431,6 +439,59 @@ async fn publish_audit(
     crate::service::ingestion::ingestion_service::ingest(req)
         .await
         .map_err(|e| anyhow::anyhow!(e.to_string()))
+}
+
+// ============================================================================
+// Visdata Audit Implementation
+// ============================================================================
+
+/// Record an audit message (visdata version)
+/// Similar to enterprise version, calls visdata::meta::audit::audit()
+#[cfg(all(feature = "visdata", not(feature = "enterprise")))]
+pub async fn audit(msg: visdata_auditor::AuditMessage) {
+    visdata_auditor::audit(META_ORG_ID, msg, publish_audit).await;
+}
+
+/// Flush audit buffer (visdata version)
+/// Similar to enterprise version, calls visdata::meta::audit::flush_audit()
+#[cfg(all(feature = "visdata", not(feature = "enterprise")))]
+pub async fn flush_audit() {
+    visdata_auditor::flush_audit(META_ORG_ID, publish_audit).await;
+}
+
+/// Publish audit callback function (visdata version)
+/// This is the callback passed to visdata auditor, similar to enterprise publish_audit
+#[cfg(all(feature = "visdata", not(feature = "enterprise")))]
+async fn publish_audit(
+    req: cluster_rpc::IngestionRequest,
+) -> Result<cluster_rpc::IngestionResponse, anyhow::Error> {
+    crate::service::ingestion::ingestion_service::ingest(req)
+        .await
+        .map_err(|e| anyhow::anyhow!(e.to_string()))
+}
+
+/// Start audit publish cron job (visdata version)
+#[cfg(all(feature = "visdata", not(feature = "enterprise")))]
+pub fn run_audit_publish() -> Option<tokio::task::JoinHandle<()>> {
+    if !visdata_auditor::is_audit_enabled() {
+        log::info!("[VISDATA] Audit publishing disabled");
+        return None;
+    }
+
+    let interval = visdata_auditor::get_audit_interval();
+    log::info!(
+        "[VISDATA] Starting audit publish task with {}s interval",
+        interval
+    );
+
+    Some(tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(std::time::Duration::from_secs(interval));
+        loop {
+            ticker.tick().await;
+            log::debug!("[VISDATA] Audit ingestion loop running");
+            visdata_auditor::publish_existing_audits(META_ORG_ID, publish_audit).await;
+        }
+    }))
 }
 
 #[inline]

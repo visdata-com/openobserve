@@ -161,6 +161,10 @@ pub async fn init() -> Result<(), anyhow::Error> {
     if self_reporting::run_audit_publish().is_none() {
         log::error!("Failed to run audit publish");
     };
+    #[cfg(all(feature = "visdata", not(feature = "enterprise")))]
+    if self_reporting::run_audit_publish().is_none() {
+        log::info!("[VISDATA] Audit publishing not started - audit is disabled");
+    };
     #[cfg(feature = "cloud")]
     tokio::task::spawn(self_reporting::cloud_events::flush_cloud_events());
 

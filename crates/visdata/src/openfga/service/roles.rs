@@ -138,9 +138,10 @@ pub async fn delete_role(org_id: &str, role_name: &str) -> Result<()> {
     let role_tuples = visdata.openfga().read(Some(filter)).await?;
 
     // Also find tuples where role is the user (for permission grants)
-    let role_assignee = format!("{}#assignee", role_object);
+    // Note: Uses "has" relation to match the OpenFGA model in store.yaml
+    let role_has = format!("{}#has", role_object);
     let filter2 = TupleKeyFilter {
-        user: Some(role_assignee),
+        user: Some(role_has),
         relation: None,
         object: None,
     };
@@ -166,10 +167,11 @@ pub async fn get_role_users(org_id: &str, role_name: &str) -> Result<Vec<String>
     let visdata = Visdata::global();
     let role_object = schema::role_type(org_id, role_name);
 
-    // Find all users with assignee relation to this role
+    // Find all users with assigned relation to this role
+    // Note: Uses "assigned" to match the OpenFGA model in store.yaml
     let filter = TupleKeyFilter {
         user: None,
-        relation: Some("assignee".to_string()),
+        relation: Some("assigned".to_string()),
         object: Some(role_object),
     };
 

@@ -36,7 +36,7 @@ pub mod logs;
 pub mod mcp;
 pub mod metrics;
 pub mod organization;
-#[cfg(feature = "enterprise")]
+#[cfg(any(feature = "enterprise", feature = "visdata"))]
 pub mod patterns;
 pub mod pipeline;
 pub mod pipelines;

@@ -1527,37 +1527,118 @@ async fn init_visdata() -> Result<(), anyhow::Error> {
 
     let cfg = config::get_config();
 
+    // Helper to read env var with fallback prefixes: ZO_ first, then VISDATA_
+    fn get_env_with_fallback(zo_key: &str, visdata_key: &str, default: &str) -> String {
+        std::env::var(zo_key)
+            .or_else(|_| std::env::var(visdata_key))
+            .unwrap_or_else(|_| default.to_string())
+    }
+
+    fn get_env_bool_with_fallback(zo_key: &str, visdata_key: &str, default: bool) -> bool {
+        std::env::var(zo_key)
+            .or_else(|_| std::env::var(visdata_key))
+            .map(|v| v.to_lowercase() == "true")
+            .unwrap_or(default)
+    }
+
+    fn get_env_usize_with_fallback(zo_key: &str, visdata_key: &str, default: usize) -> usize {
+        std::env::var(zo_key)
+            .or_else(|_| std::env::var(visdata_key))
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(default)
+    }
+
+    fn get_env_f64_with_fallback(zo_key: &str, visdata_key: &str, default: f64) -> f64 {
+        std::env::var(zo_key)
+            .or_else(|_| std::env::var(visdata_key))
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(default)
+    }
+
     // Build visdata config from environment variables
+    // Supports both ZO_* and VISDATA_* prefixes for compatibility
     let visdata_config = VisdataConfig {
         // Feature flags
-        rbac_enabled: std::env::var("VISDATA_RBAC_ENABLED")
-            .map(|v| v.to_lowercase() == "true")
-            .unwrap_or(true),
-        sso_enabled: std::env::var("VISDATA_SSO_ENABLED")
-            .map(|v| v.to_lowercase() == "true")
-            .unwrap_or(true),
-        encryption_key: std::env::var("VISDATA_ENCRYPTION_KEY").ok(),
+        rbac_enabled: get_env_bool_with_fallback("ZO_RBAC_ENABLED", "VISDATA_RBAC_ENABLED", true),
+        sso_enabled: get_env_bool_with_fallback("ZO_SSO_ENABLED", "VISDATA_SSO_ENABLED", true),
+        encryption_key: std::env::var("ZO_ENCRYPTION_KEY")
+            .or_else(|_| std::env::var("VISDATA_ENCRYPTION_KEY"))
+            .ok(),
 
         // OpenFGA configuration
-        openfga_url: std::env::var("VISDATA_OPENFGA_URL")
-            .unwrap_or_else(|_| "http://localhost:8080".to_string()),
-        openfga_store_name: std::env::var("VISDATA_OPENFGA_STORE")
-            .unwrap_or_else(|_| "openobserve".to_string()),
+        openfga_url: get_env_with_fallback(
+            "ZO_OPENFGA_URL",
+            "VISDATA_OPENFGA_URL",
+            "http://localhost:8080",
+        ),
+        openfga_store_name: get_env_with_fallback(
+            "ZO_OPENFGA_STORE_NAME",
+            "VISDATA_OPENFGA_STORE",
+            "openobserve",
+        ),
 
         // Dex configuration
-        dex_grpc_url: std::env::var("VISDATA_DEX_GRPC_URL")
-            .unwrap_or_else(|_| "http://localhost:5557".to_string()),
-        dex_issuer_url: std::env::var("VISDATA_DEX_ISSUER_URL")
-            .unwrap_or_else(|_| "http://localhost:5556".to_string()),
-        dex_client_id: std::env::var("VISDATA_DEX_CLIENT_ID")
-            .unwrap_or_else(|_| "openobserve".to_string()),
-        dex_client_secret: std::env::var("VISDATA_DEX_CLIENT_SECRET")
-            .unwrap_or_else(|_| "".to_string()),
-        dex_redirect_uri: std::env::var("VISDATA_DEX_REDIRECT_URI")
-            .unwrap_or_else(|_| format!("{}/auth/callback", cfg.common.web_url)),
+        dex_grpc_url: get_env_with_fallback(
+            "ZO_DEX_GRPC_URL",
+            "VISDATA_DEX_GRPC_URL",
+            "http://localhost:5557",
+        ),
+        dex_issuer_url: get_env_with_fallback(
+            "ZO_DEX_ISSUER_URL",
+            "VISDATA_DEX_ISSUER_URL",
+            "http://localhost:5556",
+        ),
+        dex_client_id: get_env_with_fallback(
+            "ZO_DEX_CLIENT_ID",
+            "VISDATA_DEX_CLIENT_ID",
+            "openobserve",
+        ),
+        dex_client_secret: get_env_with_fallback(
+            "ZO_DEX_CLIENT_SECRET",
+            "VISDATA_DEX_CLIENT_SECRET",
+            "",
+        ),
+        dex_redirect_uri: std::env::var("ZO_DEX_REDIRECT_URI")
+            .or_else(|_| std::env::var("VISDATA_DEX_REDIRECT_URI"))
+            .unwrap_or_else(|_| format!("{}/config/redirect", cfg.common.web_url)),
 
         // Cache configuration (use defaults)
         cache: visdata::config::CacheConfig::default(),
+
+        // Log Patterns configuration
+        // Supports both ZO_* and VISDATA_* prefixes
+        log_patterns_max_logs: get_env_usize_with_fallback(
+            "ZO_LOG_PATTERNS_MAX_LOGS",
+            "VISDATA_LOG_PATTERNS_MAX_LOGS",
+            10000,
+        ),
+        log_patterns_min_cluster_size: get_env_usize_with_fallback(
+            "ZO_LOG_PATTERNS_MIN_CLUSTER_SIZE",
+            "VISDATA_LOG_PATTERNS_MIN_CLUSTER_SIZE",
+            2,
+        ),
+        log_patterns_similarity_threshold: get_env_f64_with_fallback(
+            "ZO_LOG_PATTERNS_SIMILARITY_THRESHOLD",
+            "VISDATA_LOG_PATTERNS_SIMILARITY_THRESHOLD",
+            0.6,
+        ),
+        log_patterns_drain_depth: get_env_usize_with_fallback(
+            "ZO_LOG_PATTERNS_DRAIN_DEPTH",
+            "VISDATA_LOG_PATTERNS_DRAIN_DEPTH",
+            4,
+        ),
+        log_patterns_drain_max_child: get_env_usize_with_fallback(
+            "ZO_LOG_PATTERNS_DRAIN_MAX_CHILD",
+            "VISDATA_LOG_PATTERNS_DRAIN_MAX_CHILD",
+            100,
+        ),
+        log_patterns_max_clusters: get_env_usize_with_fallback(
+            "ZO_LOG_PATTERNS_MAX_CLUSTERS",
+            "VISDATA_LOG_PATTERNS_MAX_CLUSTERS",
+            1000,
+        ),
     };
 
     log::info!(

@@ -29,6 +29,7 @@ pub use tuples::{
     get_group_member_tuple,
     get_group_role_tuple,
     get_service_account_creation_tuple,
+    get_new_user_creation_tuple,
     get_delete_user_from_org_tuples,
     role_to_fga_relation,
     get_delete_user_system_role_tuples,
