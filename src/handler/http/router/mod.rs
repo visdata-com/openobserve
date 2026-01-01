@@ -339,13 +339,30 @@ pub fn get_basic_routes(svc: &mut web::ServiceConfig) {
     }
 }
 
-#[cfg(not(feature = "enterprise"))]
+// Non-enterprise, non-visdata config routes
+#[cfg(all(not(feature = "enterprise"), not(feature = "visdata")))]
 pub fn get_config_routes(svc: &mut web::ServiceConfig) {
     let cors = get_cors();
     svc.service(
         web::scope("/config")
             .wrap(cors.clone())
             .service(status::zo_config)
+            .service(status::logout)
+            .service(status::config_runtime)
+            .service(web::scope("/reload").service(status::config_reload)),
+    );
+}
+// Visdata config routes (with Dex SSO support)
+#[cfg(all(feature = "visdata", not(feature = "enterprise")))]
+pub fn get_config_routes(svc: &mut web::ServiceConfig) {
+    let cors = get_cors();
+    svc.service(
+        web::scope("/config")
+            .wrap(cors.clone())
+            .service(status::zo_config)
+            .service(status::redirect)
+            .service(status::dex_login)
+            .service(status::refresh_token_with_dex)
             .service(status::logout)
             .service(status::config_runtime)
             .service(web::scope("/reload").service(status::config_reload)),
@@ -399,6 +416,7 @@ pub fn get_service_routes(svc: &mut web::ServiceConfig) {
         .service(users::list_invitations)
         .service(users::decline_invitation)
         .service(users::list_roles)
+        .service(users::verify_user)
         .service(organization::org::organizations)
         .service(organization::settings::get)
         .service(organization::settings::create)
@@ -568,21 +586,7 @@ pub fn get_service_routes(svc: &mut web::ServiceConfig) {
         .service(logs::ingest::handle_kinesis_request)
         .service(logs::ingest::handle_gcp_request)
         .service(organization::org::create_org)
-        .service(authz::fga::create_role)
         .service(organization::org::rename_org)
-        .service(authz::fga::get_roles)
-        .service(authz::fga::update_role)
-        .service(authz::fga::get_role_permissions)
-        .service(authz::fga::create_group)
-        .service(authz::fga::update_group)
-        .service(authz::fga::get_groups)
-        .service(authz::fga::get_group_details)
-        .service(authz::fga::get_resources)
-        .service(authz::fga::get_users_with_role)
-        .service(authz::fga::get_roles_for_user)
-        .service(authz::fga::get_groups_for_user)
-        .service(authz::fga::delete_role)
-        .service(authz::fga::delete_group)
         .service(clusters::list_clusters)
         .service(pipeline::save_pipeline)
         .service(pipeline::update_pipeline)
@@ -668,6 +672,42 @@ pub fn get_service_routes(svc: &mut web::ServiceConfig) {
         .service(service_streams::get_dimension_analytics)
         .service(service_streams::correlate_streams)
         .service(service_streams::get_services_grouped);
+    
+    // RBAC routes - only register when visdata is NOT enabled (use enterprise/community version)
+    #[cfg(not(feature = "visdata"))]
+    let service = service
+        .service(authz::fga::create_role)
+        .service(authz::fga::get_roles)
+        .service(authz::fga::update_role)
+        .service(authz::fga::get_role_permissions)
+        .service(authz::fga::create_group)
+        .service(authz::fga::update_group)
+        .service(authz::fga::get_groups)
+        .service(authz::fga::get_group_details)
+        .service(authz::fga::get_resources)
+        .service(authz::fga::get_users_with_role)
+        .service(authz::fga::get_roles_for_user)
+        .service(authz::fga::get_groups_for_user)
+        .service(authz::fga::delete_role)
+        .service(authz::fga::delete_group);
+
+    // RBAC routes - use visdata handlers when visdata is enabled
+    #[cfg(feature = "visdata")]
+    let service = service
+        .service(authz::visdata_fga::create_role)
+        .service(authz::visdata_fga::get_roles)
+        .service(authz::visdata_fga::update_role)
+        .service(authz::visdata_fga::delete_role)
+        .service(authz::visdata_fga::get_role_permissions)
+        .service(authz::visdata_fga::get_users_with_role)
+        .service(authz::visdata_fga::create_group)
+        .service(authz::visdata_fga::get_groups)
+        .service(authz::visdata_fga::get_group_details)
+        .service(authz::visdata_fga::update_group)
+        .service(authz::visdata_fga::delete_group)
+        .service(authz::visdata_fga::get_roles_for_user)
+        .service(authz::visdata_fga::get_groups_for_user)
+        .service(authz::visdata_fga::get_resources);
 
     #[cfg(feature = "cloud")]
     let service = service
@@ -722,6 +762,35 @@ pub fn get_other_service_routes(svc: &mut web::ServiceConfig) {
             .service(rum::ingest::log)
             .service(rum::ingest::sessionreplay)
             .service(rum::ingest::data),
+    );
+}
+
+/// VisData Enterprise Routes (OpenFGA + Dex)
+/// These routes provide SSO functionality using Dex
+/// Note: RBAC routes are registered in get_service_routes with #[cfg(feature = "visdata")]
+#[cfg(feature = "visdata")]
+pub fn get_visdata_routes(svc: &mut web::ServiceConfig) {
+    let cors = get_cors();
+
+    // Auth routes (public - no authentication required)
+    svc.service(
+        web::scope("/auth")
+            .wrap(cors.clone())
+            .service(visdata::auth::handler::post_login)
+            .service(visdata::auth::handler::get_login)
+            .service(visdata::auth::handler::refresh_token_handler)
+            .service(visdata::auth::handler::logout),
+    );
+
+    // SSO routes
+    svc.service(
+        web::scope("")
+            .wrap(cors)
+            .service(visdata::auth::handler::list_providers)
+            .service(visdata::auth::handler::create_oidc_provider)
+            .service(visdata::auth::handler::create_ldap_provider)
+            .service(visdata::auth::handler::sso_login)
+            .service(visdata::auth::handler::sso_callback),
     );
 }
 

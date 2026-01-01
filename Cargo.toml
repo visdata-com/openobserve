@@ -25,6 +25,7 @@ publish = false
 default = []
 enterprise = []
 cloud = []
+visdata = ["dep:visdata"]
 mimalloc = ["dep:mimalloc"]
 jemalloc = ["dep:tikv-jemallocator"]
 profiling = ["dep:pprof"]
@@ -191,6 +192,7 @@ tokio-rustls.workspace = true
 roaring.workspace = true
 flight.workspace = true
 async-stream.workspace = true
+visdata = { workspace = true, optional = true }
 
 [dev-dependencies]
 async-walkdir.workspace = true
@@ -397,3 +399,5 @@ vector-enrichment = { version = "0.1.0", package = "enrichment", git = "https://
 vrl = { version = "0.28.1", features = ["arbitrary", "value", "compiler", "test"] }
 zip = "6.0.0"
 zstd = "0.13"
+#visdata = { path = "../o2_visdata" }
+visdata = { git = "https://github.com/visdata-com/o2_visdata.git", branch = "main", package = "visdata" }

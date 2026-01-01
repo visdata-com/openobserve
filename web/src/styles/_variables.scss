@@ -236,7 +236,7 @@ $o2-dark-teal-900: #9BDDD6;
   // --o2-bg-dark: #0d1117;
 
 // $theme-color: #136dfb;
-$theme-color: #3F7994;
+$theme-color: #083090;
 $dark-theme-color: #112027;
 
 $theme-mode: white;
@@ -323,7 +323,7 @@ $json-object-dark: #D1D5DB;         // Light gray
   --o2-scrollbar-thumb-hover-bg: color-mix(in srgb, var(--o2-theme-elements) 0%, white);
   --o2-scrollbar-thumb-active-bg: color-mix(in srgb, var(--o2-theme-elements) 0%, white);
 
-  --o2-theme-color: #3F7994;
+  --o2-theme-color: #083090;
   --o2-dark-theme-color: #112027;
 
   /* These can be customized dynamically via theme customizer */
@@ -346,7 +346,7 @@ $json-object-dark: #D1D5DB;         // Light gray
   --o2-menu-gradient-start: rgba(89, 175, 199, 0.3);
   --o2-menu-gradient-end: rgba(48, 193, 233, 0.3);
   --o2-menu-border-color: rgba(89, 155, 174, 0.6);
-  --o2-menu-color: #3F7994;
+  --o2-menu-color: #083090;
 
 
   --o2-table-header-bg: color-mix(in srgb, #{$theme-color} 20%, white);

@@ -12,7 +12,7 @@
     "build": "run-p type-check build-only",
     "postbuild": "run-p copy",
     "preview": "vite preview",
-    "copy": "cd dist && mkdir src && cd src && mkdir assets && cd .. && cd .. && cp -r src/assets/* dist/src/assets/",
+    "copy": "node -e \"const fs=require('fs-extra');fs.ensureDirSync('dist/src/assets');fs.copySync('src/assets','dist/src/assets');\"",
     "test:unit": "vitest --environment jsdom --root src/",
     "test:unit:coverage": "vitest --coverage --run",
     "test:coverage:check": "./coverage.sh check",

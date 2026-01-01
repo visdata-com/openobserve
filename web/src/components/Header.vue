@@ -102,11 +102,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           class="openobserve-logo cursor-pointer"
           :src="getImageURL(
             store.state.theme === 'dark'
-              ? 'images/common/openobserve_latest_dark_2.svg'
-              : 'images/common/openobserve_latest_light_2.svg'
+              ? 'images/common/mvs_logo_dark.png'
+              : 'images/common/mvs_logo_light.png'
           )"
           @click="goToHome"
-          alt="OpenObserve"
+          alt="MVS"
         />
       </div>
     </div>
@@ -117,11 +117,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         class="openobserve-logo cursor-pointer"
         :src="getImageURL(
           store.state.theme === 'dark'
-            ? 'images/common/openobserve_latest_dark_2.svg'
-            : 'images/common/openobserve_latest_light_2.svg'
+            ? 'images/common/mvs_logo_dark.png'
+            : 'images/common/mvs_logo_light.png'
         )"
         @click="goToHome"
-        alt="OpenObserve"
+        alt="MVS"
       />
     </div>
 
