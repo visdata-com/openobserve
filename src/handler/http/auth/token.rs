@@ -12,10 +12,9 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
 #[cfg(feature = "enterprise")]
 use actix_web::http::{Method, header};
-use actix_web::{Error, dev::ServiceRequest};
+use actix_web::{Error, dev::ServiceRequest, error::ErrorUnauthorized};
 #[cfg(feature = "enterprise")]
 use o2_dex::{config::get_config as get_dex_config, service::auth::get_dex_jwks};
 
@@ -234,8 +233,10 @@ pub async fn token_validator(
     };
 
     use super::validator::check_permissions;
-    use crate::common::utils::auth::V2_API_PREFIX;
-    use crate::service::{db, users};
+    use crate::{
+        common::utils::auth::V2_API_PREFIX,
+        service::{db, users},
+    };
 
     // Check if SSO is enabled
     if !visdata::config::is_sso_enabled().await {
@@ -372,7 +373,10 @@ pub async fn token_validator(
         }
         Err(err) => {
             log::error!("[visdata] Token verification failed: {}", err);
-            Err((ErrorUnauthorized(format!("Token verification failed: {}", err)), req))
+            Err((
+                ErrorUnauthorized(format!("Token verification failed: {}", err)),
+                req,
+            ))
         }
     }
 }
