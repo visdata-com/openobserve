@@ -31,6 +31,8 @@ use infra::table::org_users::OrgUserRecord;
 use o2_openfga::{
     authorizer::authz::delete_service_account_from_org, config::get_config as get_openfga_config,
 };
+#[cfg(feature = "visdata")]
+use visdata::config::get_openfga_config as get_visdata_openfga_config;
 
 use super::db::org_users::get_cached_user_org;
 #[cfg(feature = "enterprise")]
@@ -67,7 +69,7 @@ pub async fn post_user(
     let cfg = get_config();
     usr_req.email = usr_req.email.to_lowercase();
     if usr_req.role.custom_role.is_some() {
-        #[cfg(not(feature = "enterprise"))]
+        #[cfg(not(any(feature = "enterprise", feature = "visdata")))]
         return Ok(HttpResponse::BadRequest().json(MetaHttpResponse::message(
             http::StatusCode::BAD_REQUEST,
             "Custom roles not allowed",
@@ -92,6 +94,37 @@ pub async fn post_user(
                 }
                 Err(e) => {
                     log::error!("Error fetching custom roles during post user: {e}");
+                    return Ok(HttpResponse::BadRequest().json(MetaHttpResponse::message(
+                        http::StatusCode::BAD_REQUEST,
+                        "Custom role not found",
+                    )));
+                }
+            }
+        }
+        #[cfg(feature = "visdata")]
+        {
+            let visdata_enabled = get_visdata_openfga_config()
+                .map(|c| c.enabled)
+                .unwrap_or(false);
+            if !visdata_enabled {
+                return Ok(HttpResponse::BadRequest().json(MetaHttpResponse::message(
+                    http::StatusCode::BAD_REQUEST,
+                    "Custom roles not allowed",
+                )));
+            }
+            match visdata::openfga::authorizer::roles::get_all_roles(org_id, None).await {
+                Ok(res) => {
+                    for custom_role in usr_req.role.custom_role.as_ref().unwrap() {
+                        if !res.contains(custom_role) {
+                            return Ok(HttpResponse::BadRequest().json(MetaHttpResponse::message(
+                                http::StatusCode::BAD_REQUEST,
+                                "Custom role not found",
+                            )));
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::error!("[Visdata] Error fetching custom roles during post user: {e}");
                     return Ok(HttpResponse::BadRequest().json(MetaHttpResponse::message(
                         http::StatusCode::BAD_REQUEST,
                         "Custom role not found",
@@ -199,6 +232,43 @@ pub async fn post_user(
                     }
                 }
             }
+            // Update Visdata OpenFGA
+            #[cfg(feature = "visdata")]
+            {
+                use visdata::openfga::authorizer::authz::{
+                    get_add_user_to_org_tuples, get_service_account_creation_tuple,
+                    get_user_crole_tuple, update_tuples,
+                };
+                if let Some(config) = get_visdata_openfga_config() {
+                    if config.enabled {
+                        let mut tuples = vec![];
+                        let org_id = org_id.replace(' ', "_");
+                        get_add_user_to_org_tuples(
+                            &org_id,
+                            &usr_req.email,
+                            &usr_req.role.base_role.to_string(),
+                            &mut tuples,
+                        );
+                        if usr_req.role.base_role.eq(&UserRole::ServiceAccount) {
+                            get_service_account_creation_tuple(&org_id, &usr_req.email, &mut tuples);
+                        }
+                        if usr_req.role.custom_role.is_some() {
+                            let custom_role = usr_req.role.custom_role.clone().unwrap();
+                            custom_role.iter().for_each(|crole| {
+                                tuples.push(get_user_crole_tuple(&org_id, crole, &usr_req.email));
+                            });
+                        }
+                        match update_tuples(tuples, vec![]).await {
+                            Ok(_) => {
+                                log::info!("[Visdata] User saved successfully in openfga");
+                            }
+                            Err(e) => {
+                                log::error!("[Visdata] Error creating user in openfga: {e}");
+                            }
+                        }
+                    }
+                }
+            }
             Ok(HttpResponse::Ok().json(MetaHttpResponse::message(
                 http::StatusCode::OK,
                 "User saved successfully",
@@ -300,12 +370,37 @@ pub async fn update_user(
         let mut is_updated = false;
         let mut is_org_updated = false;
         let mut message = "";
-        #[cfg(feature = "enterprise")]
-        let mut custom_roles = vec![];
-        #[cfg(feature = "enterprise")]
+        #[cfg(any(feature = "enterprise", feature = "visdata"))]
+        let mut custom_roles: Vec<String> = vec![];
+        #[cfg(any(feature = "enterprise", feature = "visdata"))]
         let mut custom_roles_need_change = false;
         match existing_user {
             Some(local_user) => {
+                // For visdata feature, check if external user is trying to modify personal info
+                #[cfg(feature = "visdata")]
+                if local_user.is_external {
+                    // Check if user is trying to modify first_name or last_name (compare with actual change)
+                    let trying_to_change_first_name = user.first_name.as_ref()
+                        .map(|name| name != &local_user.first_name)
+                        .unwrap_or(false);
+                    let trying_to_change_last_name = user.last_name.as_ref()
+                        .map(|name| name != &local_user.last_name)
+                        .unwrap_or(false);
+                    let trying_to_change_password = user.new_password.is_some();
+
+                    if trying_to_change_first_name || trying_to_change_last_name || trying_to_change_password {
+                        return Ok(HttpResponse::BadRequest().json(MetaHttpResponse::message(
+                            http::StatusCode::BAD_REQUEST,
+                            "Personal info updates not allowed for external users, please update in identity provider (LDAP/SSO)",
+                        )));
+                    }
+
+                    // For external users, only role updates are allowed
+                    // Continue to process role update below
+                }
+
+                // For non-visdata builds, reject all updates to external users
+                #[cfg(not(feature = "visdata"))]
                 if local_user.is_external {
                     return Ok(HttpResponse::BadRequest().json(MetaHttpResponse::message(
                         http::StatusCode::BAD_REQUEST,
@@ -389,17 +484,29 @@ pub async fn update_user(
                     new_user.last_name = user.last_name.unwrap();
                     is_updated = true;
                 }
-                if user.role.is_some()
+
+                // For visdata feature, allow role updates for external users
+                // Check if role field has a non-empty value
+                let has_valid_role = user.role.as_ref().map(|r| !r.role.is_empty()).unwrap_or(false);
+                #[cfg(feature = "visdata")]
+                let can_update_role = has_valid_role
+                    && (!update_mode.is_self_update()
+                        || (local_user.role.eq(&UserRole::Admin)
+                            || local_user.role.eq(&UserRole::Editor)
+                            || local_user.role.eq(&UserRole::Viewer)
+                            || local_user.role.eq(&UserRole::Root)));
+                #[cfg(not(feature = "visdata"))]
+                let can_update_role = has_valid_role
                     && !local_user.is_external
                     && (!update_mode.is_self_update()
                         || (local_user.role.eq(&UserRole::Admin)
                             // Editor can update other's roles, but viewer can update only self
                             || local_user.role.eq(&UserRole::Editor)
                             || local_user.role.eq(&UserRole::Viewer)
-                            || local_user.role.eq(&UserRole::Root)))
+                            || local_user.role.eq(&UserRole::Root)));
                 // if the User Role is Root, we do not change the Role
                 // Admins Role can still be mutable.
-                {
+                if can_update_role {
                     let new_org_role = UserOrgRole::from(&user.role.unwrap());
                     old_role = Some(new_user.role);
                     new_user.role = new_org_role.base_role;
@@ -408,13 +515,18 @@ pub async fn update_user(
                         message = "Root user role cannot be changed";
                     } else if update_mode.is_self_update() && local_user.role < new_user.role {
                         message = "Self role cannot be upgraded";
-                    } else if local_user.role.ne(&new_user.role) {
-                        #[cfg(feature = "enterprise")]
+                    } else {
+                        // Check if system role changed
+                        if local_user.role.ne(&new_user.role) {
+                            is_org_updated = true;
+                        }
+                        // Check if custom roles need to be updated (enterprise/visdata)
+                        #[cfg(any(feature = "enterprise", feature = "visdata"))]
                         if new_org_role.custom_role.is_some() {
                             custom_roles_need_change = true;
                             custom_roles.extend(new_org_role.custom_role.unwrap());
+                            is_org_updated = true;
                         }
-                        is_org_updated = true;
                     }
                 }
                 if user.token.is_some() {
@@ -550,9 +662,75 @@ pub async fn update_user(
                             }
                         }
                     }
+                    // Update Visdata OpenFGA for role changes
+                    #[cfg(feature = "visdata")]
+                    {
+                        use visdata::openfga::authorizer::{
+                            authz::{get_user_crole_tuple, update_tuples, update_user_role},
+                            roles::{get_role_key, get_roles_for_org_user, get_user_crole_removal_tuples},
+                        };
+
+                        if let Some(config) = get_visdata_openfga_config() {
+                            if config.enabled
+                                && let Some(old) = old_role
+                                && let Some(new) = new_role
+                            {
+                                // Update system role if changed
+                                if !old.eq(&new) {
+                                    let old_str = old.to_string();
+                                    let new_str = new.to_string();
+                                    log::debug!(
+                                        "[Visdata] updating openfga role for {email} from {old_str} to {new_str}"
+                                    );
+                                    if let Err(e) = update_user_role(org_id, email, &old_str, &new_str).await {
+                                        log::error!("[Visdata] Error updating user role in openfga: {e}");
+                                    }
+                                }
+
+                                // Update custom roles if changed
+                                if custom_roles_need_change {
+                                    match get_roles_for_org_user(org_id, email).await {
+                                        Ok(existing_roles) => {
+                                            let mut write_tuples = vec![];
+                                            let mut delete_tuples = vec![];
+                                            custom_roles.iter().for_each(|crole| {
+                                                if !existing_roles.contains(crole) {
+                                                    write_tuples
+                                                        .push(get_user_crole_tuple(org_id, crole, email));
+                                                }
+                                            });
+                                            existing_roles.iter().for_each(|crole| {
+                                                if !custom_roles.contains(crole) {
+                                                    get_user_crole_removal_tuples(
+                                                        email,
+                                                        &get_role_key(org_id, crole),
+                                                        &mut delete_tuples,
+                                                    );
+                                                }
+                                            });
+                                            if let Err(e) = update_tuples(write_tuples, delete_tuples).await {
+                                                log::error!(
+                                                    "[Visdata] Error updating custom roles for user {email} in {org_id} org : {e}"
+                                                );
+                                                return Ok(HttpResponse::InternalServerError().json(
+                                                    MetaHttpResponse::error(
+                                                        http::StatusCode::INTERNAL_SERVER_ERROR,
+                                                        "Failed to update custom roles for user",
+                                                    ),
+                                                ));
+                                            }
+                                        }
+                                        Err(e) => {
+                                            log::error!("[Visdata] Error getting existing roles for user: {e}");
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
-                #[cfg(not(feature = "enterprise"))]
+                #[cfg(not(any(feature = "enterprise", feature = "visdata")))]
                 log::debug!("Role changed from {old_role:?} to {new_role:?}");
                 Ok(HttpResponse::Ok().json(MetaHttpResponse::message(
                     http::StatusCode::OK,
@@ -603,6 +781,30 @@ pub async fn add_admin_to_org(org_id: &str, user_email: &str) -> Result<(), anyh
                     }
                     Err(e) => {
                         log::error!("Error adding user to the org in openfga: {e}");
+                    }
+                }
+            }
+        }
+        // Update Visdata OpenFGA
+        #[cfg(feature = "visdata")]
+        {
+            use visdata::openfga::authorizer::authz::{get_add_user_to_org_tuples, update_tuples};
+            if let Some(config) = get_visdata_openfga_config() {
+                if config.enabled {
+                    let mut tuples = vec![];
+                    get_add_user_to_org_tuples(
+                        org_id,
+                        user_email,
+                        &UserRole::Admin.to_string(),
+                        &mut tuples,
+                    );
+                    match update_tuples(tuples, vec![]).await {
+                        Ok(_) => {
+                            log::info!("[Visdata] User added to org successfully in openfga");
+                        }
+                        Err(e) => {
+                            log::error!("[Visdata] Error adding user to the org in openfga: {e}");
+                        }
                     }
                 }
             }
@@ -705,6 +907,33 @@ pub async fn add_user_to_org(
                         }
                         Err(e) => {
                             log::error!("Error adding user to the org in openfga: {e}");
+                        }
+                    }
+                }
+            }
+            // Update Visdata OpenFGA
+            #[cfg(feature = "visdata")]
+            {
+                use visdata::openfga::authorizer::authz::{
+                    get_add_user_to_org_tuples, get_user_crole_tuple, update_tuples,
+                };
+                if let Some(config) = get_visdata_openfga_config() {
+                    if config.enabled {
+                        let mut tuples = vec![];
+                        get_add_user_to_org_tuples(org_id, &email, &base_role.to_string(), &mut tuples);
+                        if role.custom_role.is_some() {
+                            let custom_role = role.custom_role.clone().unwrap();
+                            custom_role.iter().for_each(|crole| {
+                                tuples.push(get_user_crole_tuple(org_id, crole, &email));
+                            });
+                        }
+                        match update_tuples(tuples, vec![]).await {
+                            Ok(_) => {
+                                log::info!("[Visdata] User added to org successfully in openfga");
+                            }
+                            Err(e) => {
+                                log::error!("[Visdata] Error adding user to the org in openfga: {e}");
+                            }
                         }
                     }
                 }
@@ -1006,6 +1235,19 @@ pub async fn remove_user_from_org(
                                 }
                             }
                         }
+                        // Delete from Visdata OpenFGA
+                        #[cfg(feature = "visdata")]
+                        {
+                            use visdata::openfga::authorizer::authz::delete_user_from_org;
+                            if let Some(config) = get_visdata_openfga_config() {
+                                if config.enabled {
+                                    log::debug!("[Visdata] delete user single org");
+                                    if let Err(e) = delete_user_from_org(org_id, &email_id).await {
+                                        log::error!("[Visdata] Error deleting user from org in openfga: {e}");
+                                    }
+                                }
+                            }
+                        }
                     } else {
                         let mut _user_fga_role: Option<String> = None;
                         #[cfg(feature = "enterprise")]
@@ -1055,6 +1297,19 @@ pub async fn remove_user_from_org(
                                         if is_service_account {
                                             delete_service_account_from_org(org_id, &email_id)
                                                 .await;
+                                        }
+                                    }
+                                }
+                                // Delete from Visdata OpenFGA
+                                #[cfg(feature = "visdata")]
+                                {
+                                    use visdata::openfga::authorizer::authz::delete_user_from_org;
+                                    if let Some(config) = get_visdata_openfga_config() {
+                                        if config.enabled {
+                                            log::debug!("[Visdata] delete user multi org");
+                                            if let Err(e) = delete_user_from_org(org_id, &email_id).await {
+                                                log::error!("[Visdata] Error deleting user from org in openfga: {e}");
+                                            }
                                         }
                                     }
                                 }

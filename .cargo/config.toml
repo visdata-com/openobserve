@@ -19,4 +19,4 @@ rustflags = ["-C", "target-feature=+aes,+neon"]
 rustflags = ["-C", "target-feature=+aes,+sse2,+ssse3,+sse4.1,+sse4.2"]
 
 [target.x86_64-pc-windows-msvc]
-rustflags = ["-C", "target-feature=+aes,+sse2,+ssse3,+sse4.1,+sse4.2"]
+rustflags = ["-C", "target-feature=+aes,+sse2,+ssse3,+sse4.1,+sse4.2", "-C", "symbol-mangling-version=v0"]

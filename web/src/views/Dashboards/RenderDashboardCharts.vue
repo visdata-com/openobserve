@@ -90,6 +90,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             "
             :dashboardName="dashboardName"
             :folderName="folderName"
+            :showLegendsButton="showLegendsButton"
             @updated:data-zoom="$emit('updated:data-zoom', $event)"
             @onMovePanel="onMovePanel"
             @refreshPanelRequest="refreshPanelRequest"
@@ -148,6 +149,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                 :dashboardName="dashboardName"
                 :folderName="folderName"
                 :allowAlertCreation="allowAlertCreation"
+                :showLegendsButton="showLegendsButton"
                 @updated:data-zoom="$emit('updated:data-zoom', $event)"
                 @onMovePanel="onMovePanel"
                 @refreshPanelRequest="refreshPanelRequest"
@@ -243,6 +245,7 @@ export default defineComponent({
     "onMovePanel",
     "panelsValues",
     "searchRequestTraceIds",
+    "chart:contextmenu",
   ],
   props: {
     viewOnly: {},
@@ -279,6 +282,10 @@ export default defineComponent({
       default: "",
     },
     allowAlertCreation: {
+      type: Boolean,
+      default: false,
+    },
+    showLegendsButton: {
       type: Boolean,
       default: false,
     },

@@ -352,6 +352,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "aes-gcm"
+version = "0.10.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "831010a0f742e1209b3bcea8fab6a8e149051ba6099432c8cb2cc117dec3ead1"
+dependencies = [
+ "aead",
+ "aes",
+ "cipher",
+ "ctr",
+ "ghash",
+ "subtle",
+]
+
+[[package]]
 name = "aes-siv"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2489,7 +2503,90 @@ dependencies = [
  "parking_lot 0.12.5",
  "parquet",
  "prometheus",
- "proto",
+ "proto 0.1.0",
+ "rand 0.9.2",
+ "regex",
+ "reqwest",
+ "roaring",
+ "ryu",
+ "sea-orm",
+ "segment",
+ "serde",
+ "serde_json",
+ "sha256",
+ "sqlparser",
+ "sqlx",
+ "strum 0.27.2",
+ "svix-ksuid",
+ "sysinfo",
+ "tantivy",
+ "tantivy-fst",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tonic 0.14.2",
+ "tonic-prost",
+ "tracing",
+ "tracing-log",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+ "urlencoding",
+ "utoipa",
+ "uuid",
+ "vrl",
+]
+
+[[package]]
+name = "config"
+version = "0.1.0"
+source = "git+https://github.com/visdata-com/openobserve.git?branch=main#cdc49125a32b56865a5ed46c3327e66415219a74"
+dependencies = [
+ "aes-siv",
+ "ahash 0.8.11",
+ "anyhow",
+ "arc-swap",
+ "argon2",
+ "arrow",
+ "arrow-json",
+ "arrow-schema",
+ "async-recursion",
+ "async-walkdir",
+ "aws-config",
+ "aws-sdk-sns",
+ "base64 0.22.1",
+ "bitvec",
+ "byteorder",
+ "bytes",
+ "chromiumoxide",
+ "chrono",
+ "chrono-tz",
+ "cityhasher",
+ "cron",
+ "dashmap",
+ "datafusion",
+ "dotenv_config",
+ "dotenvy",
+ "faststr",
+ "futures 0.3.31",
+ "gxhash",
+ "hashbrown 0.16.0",
+ "hex",
+ "indexmap 2.12.0",
+ "itertools 0.14.0",
+ "itoa",
+ "lettre",
+ "local-ip-address",
+ "log",
+ "md5",
+ "memchr",
+ "murmur3",
+ "once_cell",
+ "opentelemetry 0.31.0",
+ "ordered-float 5.0.0",
+ "parking_lot 0.12.5",
+ "parquet",
+ "prometheus",
+ "proto 0.1.0 (git+https://github.com/visdata-com/openobserve.git?branch=main)",
  "rand 0.9.2",
  "regex",
  "reqwest",
@@ -4321,7 +4418,7 @@ dependencies = [
  "arrow-flight",
  "arrow-schema",
  "bytes",
- "config",
+ "config 0.1.0",
  "datafusion",
  "flatbuffers",
  "futures 0.3.31",
@@ -4591,6 +4688,16 @@ dependencies = [
  "libc",
  "r-efi",
  "wasi 0.14.2+wasi-0.2.4",
+]
+
+[[package]]
+name = "ghash"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f0d8a4362ccb29cb0b265253fb0a2728f592895ee6854fd9bc13f2ffda266ff1"
+dependencies = [
+ "opaque-debug",
+ "polyval",
 ]
 
 [[package]]
@@ -5282,7 +5389,7 @@ dependencies = [
  "bytes",
  "chrono",
  "collapse",
- "config",
+ "config 0.1.0",
  "datafusion",
  "futures 0.3.31",
  "hashbrown 0.16.0",
@@ -5294,7 +5401,7 @@ dependencies = [
  "opentelemetry 0.31.0",
  "parking_lot 0.12.5",
  "parquet",
- "proto",
+ "proto 0.1.0",
  "reqwest",
  "sea-orm",
  "sea-orm-migration",
@@ -5314,6 +5421,52 @@ dependencies = [
 ]
 
 [[package]]
+name = "infra"
+version = "0.1.0"
+source = "git+https://github.com/visdata-com/openobserve.git?branch=main#cdc49125a32b56865a5ed46c3327e66415219a74"
+dependencies = [
+ "aes-siv",
+ "ahash 0.8.11",
+ "anyhow",
+ "arc-swap",
+ "arrow",
+ "async-nats",
+ "async-recursion",
+ "async-trait",
+ "base64 0.22.1",
+ "bytes",
+ "chrono",
+ "config 0.1.0 (git+https://github.com/visdata-com/openobserve.git?branch=main)",
+ "datafusion",
+ "futures 0.3.31",
+ "hashbrown 0.16.0",
+ "hashlink",
+ "itertools 0.14.0",
+ "log",
+ "object_store",
+ "once_cell",
+ "opentelemetry 0.31.0",
+ "parking_lot 0.12.5",
+ "parquet",
+ "proto 0.1.0 (git+https://github.com/visdata-com/openobserve.git?branch=main)",
+ "reqwest",
+ "sea-orm",
+ "sea-orm-migration",
+ "serde",
+ "serde_json",
+ "sha1",
+ "sqlx",
+ "svix-ksuid",
+ "thiserror 2.0.17",
+ "tokio",
+ "tokio-stream",
+ "tonic 0.14.2",
+ "tracing",
+ "tracing-opentelemetry",
+ "zstd",
+]
+
+[[package]]
 name = "ingester"
 version = "0.1.0"
 dependencies = [
@@ -5323,13 +5476,13 @@ dependencies = [
  "byteorder",
  "bytes",
  "chrono",
- "config",
+ "config 0.1.0",
  "core_affinity",
  "datafusion",
  "futures 0.3.31",
  "hashbrown 0.16.0",
  "indexmap 2.12.0",
- "infra",
+ "infra 0.1.0",
  "itertools 0.14.0",
  "log",
  "once_cell",
@@ -6698,7 +6851,7 @@ checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 
 [[package]]
 name = "openobserve"
-version = "0.17.0"
+version = "0.40.0"
 dependencies = [
  "actix-cors",
  "actix-http",
@@ -6734,7 +6887,7 @@ dependencies = [
  "chrono",
  "clap",
  "cloudevents-sdk",
- "config",
+ "config 0.1.0",
  "console-subscriber",
  "cron",
  "csv",
@@ -6758,7 +6911,7 @@ dependencies = [
  "hashlink",
  "hex",
  "http-auth-basic",
- "infra",
+ "infra 0.1.0",
  "ingester",
  "itertools 0.14.0",
  "jsonwebtoken",
@@ -6784,7 +6937,7 @@ dependencies = [
  "promql-parser",
  "prost 0.14.1",
  "prost-wkt-types",
- "proto",
+ "proto 0.1.0",
  "pyroscope",
  "pyroscope_pprofrs",
  "rand 0.9.2",
@@ -6829,6 +6982,7 @@ dependencies = [
  "utoipa",
  "utoipa-swagger-ui",
  "version-compare",
+ "visdata",
  "vrl",
  "wal",
  "x509-parser",
@@ -7442,6 +7596,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "polyval"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9d1fe60d06143b2430aa532c94cfe9e29783047f06c0d7fd359a9a51b729fa25"
+dependencies = [
+ "cfg-if",
+ "cpufeatures",
+ "opaque-debug",
+ "universal-hash",
+]
+
+[[package]]
 name = "portable-atomic"
 version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7916,6 +8082,25 @@ dependencies = [
 [[package]]
 name = "proto"
 version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "datafusion",
+ "datafusion-proto",
+ "prost 0.14.1",
+ "prost-build 0.14.1",
+ "prost-wkt-types",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tonic 0.14.2",
+ "tonic-prost",
+ "tonic-prost-build",
+]
+
+[[package]]
+name = "proto"
+version = "0.1.0"
+source = "git+https://github.com/visdata-com/openobserve.git?branch=main#cdc49125a32b56865a5ed46c3327e66415219a74"
 dependencies = [
  "async-trait",
  "datafusion",
@@ -8554,7 +8739,7 @@ dependencies = [
  "anyhow",
  "chromiumoxide",
  "chrono",
- "config",
+ "config 0.1.0",
  "env_logger 0.11.8",
  "futures 0.3.31",
  "lettre",
@@ -11324,6 +11509,41 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
+name = "visdata"
+version = "0.1.0"
+source = "git+https://github.com/visdata-com/o2_visdata.git?branch=main#ce7240f4ca7649764ad18b15cfab2cc7505c60e5"
+dependencies = [
+ "actix-web",
+ "aes-gcm",
+ "anyhow",
+ "async-trait",
+ "base64 0.22.1",
+ "chrono",
+ "dashmap",
+ "futures 0.3.31",
+ "infra 0.1.0 (git+https://github.com/visdata-com/openobserve.git?branch=main)",
+ "jsonwebtoken",
+ "log",
+ "once_cell",
+ "proto 0.1.0 (git+https://github.com/visdata-com/openobserve.git?branch=main)",
+ "rand 0.9.2",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "svix-ksuid",
+ "thiserror 2.0.17",
+ "tokio",
+ "tonic 0.14.2",
+ "tracing",
+ "url",
+ "urlencoding",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
 name = "vob"
 version = "3.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11475,7 +11695,7 @@ version = "0.1.0"
 dependencies = [
  "byteorder",
  "bytes",
- "config",
+ "config 0.1.0",
  "crc32fast",
  "criterion",
  "log",

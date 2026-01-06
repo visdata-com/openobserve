@@ -16,6 +16,7 @@ class EnrichmentPage {
         // Navigation locators
         this.pipelineMenuItem = '[data-test="menu-link-\\/pipeline-item"]';
         this.enrichmentTableTab = '[data-test="function-enrichment-table-tab"]';
+        this.enrichmentTablesSearchInput = '[data-test="enrichment-tables-search-input"]';
         
         // Logs table locators
         this.timestampColumn = '[data-test="log-table-column-0-_timestamp"]';
@@ -588,9 +589,13 @@ abc, err = get_enrichment_table_record("${fileName}", {
     }
 
     async searchEnrichmentTableInList(tableName) {
-        // Use getByRole to find the textbox input within the search wrapper
-        const searchInput = this.page.locator('[data-test="enrichment-tables-search-input"]').getByRole('textbox');
-        await searchInput.waitFor({ state: 'visible' });
+        // First ensure the enrichment tables list is visible
+        await this.page.locator('[data-test="enrichment-tables-list-title"]').waitFor({ state: 'visible', timeout: 30000 });
+        await this.page.waitForLoadState('networkidle');
+
+        // Use getByPlaceholder which works reliably with Quasar q-input components
+        const searchInput = this.page.getByPlaceholder(/search enrichment table/i);
+        await searchInput.waitFor({ state: 'visible', timeout: 15000 });
         await searchInput.fill(tableName);
         await this.page.waitForLoadState('networkidle');
     }
