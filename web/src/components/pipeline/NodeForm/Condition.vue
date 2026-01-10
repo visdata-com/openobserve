@@ -20,7 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     class="stream-routing-section full-width"
     :class="store.state.theme === 'dark' ? 'bg-dark' : 'bg-white'"
   >
-    <div class="stream-routing-title q-pb-sm q-pl-md tw-flex tw-items-center tw-justify-between ">
+    <div class="stream-routing-title q-pb-sm q-pl-md tw:flex tw:items-center tw:justify-between ">
       {{ t("pipeline.conditionTitle") }}
       <div>
           <q-btn round flat icon="cancel" @click="openCancelDialog">
@@ -45,8 +45,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
               :stream-fields="filteredColumns"
               :group="conditionGroup"
               :depth="0"
-              condition-input-width="tw-w-[130px]"
+              condition-input-width="tw:w-[130px]"
               :allow-custom-columns="true"
+              module="pipelines"
               @add-condition="(updatedGroup) => updateGroup(updatedGroup)"
               @add-group="(updatedGroup) => updateGroup(updatedGroup)"
               @remove-group="(groupId) => removeConditionGroup(groupId)"
@@ -99,7 +100,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         <q-btn
           v-if="pipelineObj.isEditNode"
             data-test="add-condition-delete-btn"
-            class="o2-secondary-button tw-h-[36px] q-mr-md"
+            class="o2-secondary-button tw:h-[36px] q-mr-md"
             color="negative"
             flat
             type="button"
@@ -112,7 +113,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         </q-btn>
           <q-btn
             data-test="add-condition-cancel-btn"
-            class="o2-secondary-button tw-h-[36px]"
+            class="o2-secondary-button tw:h-[36px]"
             :label="t('alerts.cancel')"
             flat
             type="button"
@@ -123,7 +124,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           <q-btn
             data-test="add-condition-save-btn"
             :label="t('alerts.save')"
-            class="no-border q-ml-md o2-primary-button tw-h-[36px]"
+            class="no-border q-ml-md o2-primary-button tw:h-[36px]"
             :class="store.state.theme === 'dark' ? 'o2-primary-button-dark' : 'o2-primary-button-light'"
             flat
             no-caps
@@ -430,10 +431,12 @@ const isValidStreamName = computed(() => {
 });
 
 const updateStreamFields = async (streamName : any, streamType : any) => {
-
   let streamCols: any = [];
+
+  // Fetch stream details including schema and settings
   const streams: any = await getStream(streamName, streamType, true);
 
+  // Map all schema fields to column objects with label, value, and type
   if (streams && Array.isArray(streams.schema)) {
     streamCols = streams.schema.map((column: any) => ({
       label: column.name,
@@ -441,6 +444,39 @@ const updateStreamFields = async (streamName : any, streamType : any) => {
       type: column.type,
     }));
   }
+
+  // Check if User Defined Schema (UDS) fields are configured
+  // If defined_schema_fields exists and is not empty, we should filter to show only those fields
+  // This allows users to limit which fields are visible in pipeline conditions to only the important ones
+  if (
+    streams?.settings?.defined_schema_fields &&
+    Array.isArray(streams.settings.defined_schema_fields) &&
+    streams.settings.defined_schema_fields.length > 0
+  ) {
+    const definedFields = streams.settings.defined_schema_fields;
+
+    // Get special system field names from config
+    // These are OpenObserve internal fields that should always be available
+    const timestampColumn = store.state.zoConfig?.timestamp_column || '_timestamp';
+    const allFieldsName = store.state.zoConfig?.all_fields_name;
+
+    // Filter the columns to include:
+    // 1. System fields (timestamp and all_fields) - always needed for OpenObserve functionality
+    // 2. User-defined schema fields - only the fields user explicitly configured as important
+    streamCols = streamCols.filter((col: any) => {
+      // Always include timestamp column (e.g., '_timestamp') - required for time-based queries
+      // Always include all fields column (e.g., '_all') - used for full-text search
+      if (col.value === timestampColumn || col.value === allFieldsName) {
+        return true;
+      }
+      // Include field only if it's in the defined_schema_fields list
+      return definedFields.includes(col.value);
+    });
+  }
+  // If defined_schema_fields is not present or empty, show all schema fields (default behavior)
+
+  // Append the filtered/unfiltered columns to existing fields
+  // Note: Using spread to add to existing arrays as this function may be called multiple times
   originalStreamFields.value = [...originalStreamFields.value, ...streamCols];
   filteredColumns.value = [...filteredColumns.value, ...streamCols];
 };
@@ -766,7 +802,7 @@ const validateSqlQuery = () => {
 }
 
 /* Make condition rows wrap and fit in narrow space */
-.pipeline-filter-group-wrapper :deep(.tw-whitespace-nowrap) {
+.pipeline-filter-group-wrapper :deep(.tw:whitespace-nowrap) {
   white-space: normal !important;
 }
 
@@ -776,7 +812,7 @@ const validateSqlQuery = () => {
 }
 
 /* Make condition inputs more compact */
-.pipeline-filter-group-wrapper :deep(.tw-flex-no-wrap) {
+.pipeline-filter-group-wrapper :deep(.tw:flex-no-wrap) {
   flex-wrap: wrap !important;
   gap: 0.25rem;
 }
@@ -788,7 +824,7 @@ const validateSqlQuery = () => {
 }
 
 /* Make FilterGroup responsive for sidepanel */
-.pipeline-filter-group-wrapper :deep(.xl\\:tw-w-fit) {
+.pipeline-filter-group-wrapper :deep(.xl\\:tw:w-fit) {
   width: 100% !important;
   max-width: 100% !important;
 }

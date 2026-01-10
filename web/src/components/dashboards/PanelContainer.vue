@@ -19,7 +19,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     class="panelcontainer"
     @mouseover="() => (isCurrentlyHoveredPanel = true)"
     @mouseleave="() => (isCurrentlyHoveredPanel = false)"
-    data-test="dashboard-panel-container"
+    :data-test="`dashboard-panel-container`"
+    :data-test-panel-id="props.data.id"
   >
     <div :class="{ 'drag-allow': !viewOnly }">
       <q-bar
@@ -358,12 +359,20 @@ self="top right" max-width="220px">
         </q-btn-dropdown>
       </q-bar>
     </div>
-    <PanelSchemaRenderer
-      :panelSchema="props.data"
-      :selectedTimeObj="props.selectedTimeDate"
-      :width="props.width"
-      :height="props.height"
+    
+    <!-- Panel-Level Variables (shown below drag-allow section) -->
+    <div class="panel-variables-wrapper">
+      <slot name="panel-variables"></slot>
+    </div>
+
+    <div class="panel-chart-wrapper">
+      <PanelSchemaRenderer
+        :panelSchema="props.data"
+        :selectedTimeObj="props.selectedTimeDate"
+        :width="props.width"
+        :height="props.height"
       :variablesData="props.variablesData"
+      :currentVariablesData="props.currentVariablesData"
       :forceLoad="props.forceLoad"
       :searchType="searchType"
       :dashboard-id="props.dashboardId"
@@ -396,9 +405,20 @@ self="top right" max-width="220px">
       ref="PanleSchemaRendererRef"
       :allowAnnotationsAdd="true"
       :allowAlertCreation="allowAlertCreation"
+      @show-legends="showLegendsDialog = true"
+      :showLegendsButton="props.showLegendsButton"
     ></PanelSchemaRenderer>
+    </div>
+    
     <q-dialog v-model="showViewPanel">
       <QueryInspector :metaData="metaData" :data="props.data"></QueryInspector>
+    </q-dialog>
+
+    <q-dialog v-model="showLegendsDialog">
+      <ShowLegendsPopup
+        :panelData="currentPanelData"
+        @close="showLegendsDialog = false"
+      />
     </q-dialog>
 
     <ConfirmDialog
@@ -470,6 +490,7 @@ export default defineComponent({
     "update:initial-variable-values",
     "onEditLayout",
     "update:runId",
+    "contextmenu",
   ],
   props: [
     "data",
@@ -491,7 +512,9 @@ export default defineComponent({
     "dashboardName",
     "folderName",
     "allowAlertCreation",
+    "panelVariablesConfig",
     "shouldRefreshWithoutCache",
+    "showLegendsButton",
   ],
   components: {
     PanelSchemaRenderer,
@@ -499,6 +522,9 @@ export default defineComponent({
     ConfirmDialog,
     SinglePanelMove,
     RelativeTime,
+    ShowLegendsPopup: defineAsyncComponent(() => {
+      return import("@/components/dashboards/addPanel/ShowLegendsPopup.vue");
+    }),
   },
   setup(props, { emit }) {
     const store = useStore();
@@ -508,6 +534,7 @@ export default defineComponent({
     const { t } = useI18n();
     const metaData = ref();
     const showViewPanel = ref(false);
+    const showLegendsDialog = ref(false);
     const confirmDeletePanelDialog = ref(false);
     const confirmMovePanelDialog: any = ref(false);
     const {
@@ -599,7 +626,6 @@ export default defineComponent({
       const streamName = queryDetails?.queries[0]?.fields?.stream;
 
       if (!originalQuery || !streamName) {
-        console.error("Missing query or stream name.");
         return null;
       }
 
@@ -658,7 +684,6 @@ export default defineComponent({
       );
       const queryDetails = props.data;
       if (!queryDetails) {
-        console.error("Data is undefined.");
         return;
       }
 
@@ -901,6 +926,15 @@ export default defineComponent({
       }
     });
 
+    const currentPanelData = computed(() => {
+      // panelData is a ref exposed by PanelSchemaRenderer
+      const rendererData = PanleSchemaRendererRef.value?.panelData || {};
+      return {
+        ...rendererData,
+        config: props.data?.config || {},
+      };
+    });
+
     return {
       props,
       onEditPanel,
@@ -940,6 +974,8 @@ export default defineComponent({
       handleIsPartialDataUpdate,
       config,
       t,
+      showLegendsDialog,
+      currentPanelData,
     };
   },
   methods: {
@@ -1020,7 +1056,22 @@ export default defineComponent({
 
 <style lang="scss" scoped>
 .panelcontainer {
-  height: calc(100% - 24px);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.drag-allow {
+  flex-shrink: 0;
+}
+
+.panel-variables-wrapper {
+  flex-shrink: 0;
+}
+
+.panel-chart-wrapper {
+  flex: 1;
+  min-height: 0;
 }
 
 .panelHeader {

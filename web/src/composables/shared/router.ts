@@ -28,6 +28,7 @@ import ShortUrl from "@/views/ShortUrl.vue";
 const Search = () => import("@/plugins/logs/Index.vue");
 const AppMetrics = () => import("@/plugins/metrics/Index.vue");
 const AppTraces = () => import("@/plugins/traces/Index.vue");
+const PromQLQueryBuilder = () => import("@/views/PromQL/QueryBuilder.vue");
 
 const TraceDetails = () => import("@/plugins/traces/TraceDetails.vue");
 
@@ -132,6 +133,18 @@ const useRoutes = () => {
       meta: {
         keepAlive: true,
         title: "Metrics",
+      },
+      beforeEnter(to: any, from: any, next: any) {
+        routeGuard(to, from, next);
+      },
+    },
+    {
+      path: "promql-builder",
+      name: "promqlBuilder",
+      component: PromQLQueryBuilder,
+      meta: {
+        keepAlive: false,
+        title: "PromQL Query Builder",
       },
       beforeEnter(to: any, from: any, next: any) {
         routeGuard(to, from, next);
@@ -324,6 +337,18 @@ const useRoutes = () => {
                 import("@/components/pipelines/PipelineHistory.vue"),
               meta: {
                 title: "Pipeline History",
+              },
+              beforeEnter(to: any, from: any, next: any) {
+                routeGuard(to, from, next);
+              },
+            },
+            {
+              path: "backfill",
+              name: "pipelineBackfill",
+              component: () =>
+                import("@/components/pipelines/BackfillJobsList.vue"),
+              meta: {
+                title: "Pipeline Backfill Jobs",
               },
               beforeEnter(to: any, from: any, next: any) {
                 routeGuard(to, from, next);

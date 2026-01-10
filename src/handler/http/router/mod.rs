@@ -339,13 +339,30 @@ pub fn get_basic_routes(svc: &mut web::ServiceConfig) {
     }
 }
 
-#[cfg(not(feature = "enterprise"))]
+// Non-enterprise, non-visdata config routes
+#[cfg(all(not(feature = "enterprise"), not(feature = "visdata")))]
 pub fn get_config_routes(svc: &mut web::ServiceConfig) {
     let cors = get_cors();
     svc.service(
         web::scope("/config")
             .wrap(cors.clone())
             .service(status::zo_config)
+            .service(status::logout)
+            .service(status::config_runtime)
+            .service(web::scope("/reload").service(status::config_reload)),
+    );
+}
+// Visdata config routes (with Dex SSO support)
+#[cfg(all(feature = "visdata", not(feature = "enterprise")))]
+pub fn get_config_routes(svc: &mut web::ServiceConfig) {
+    let cors = get_cors();
+    svc.service(
+        web::scope("/config")
+            .wrap(cors.clone())
+            .service(status::zo_config)
+            .service(status::redirect)
+            .service(status::dex_login)
+            .service(status::refresh_token_with_dex)
             .service(status::logout)
             .service(status::config_runtime)
             .service(web::scope("/reload").service(status::config_reload)),
@@ -393,13 +410,16 @@ pub fn get_service_routes(svc: &mut web::ServiceConfig) {
         .wrap(middleware::DefaultHeaders::new().add(("X-Api-Node", server)))
         .service(users::list)
         .service(users::save)
+        .service(users::delete_bulk)
         .service(users::delete)
         .service(users::update)
         .service(users::add_user_to_org)
         .service(users::list_invitations)
         .service(users::decline_invitation)
         .service(users::list_roles)
+        .service(users::verify_user)
         .service(organization::org::organizations)
+        .service(organization::assume_service_account::assume_service_account)
         .service(organization::settings::get)
         .service(organization::settings::create)
         .service(organization::settings::upload_logo)
@@ -484,6 +504,7 @@ pub fn get_service_routes(svc: &mut web::ServiceConfig) {
         .service(functions::save_function)
         .service(functions::list_functions)
         .service(functions::test_function)
+        .service(functions::delete_function_bulk)
         .service(functions::delete_function)
         .service(functions::update_function)
         .service(functions::list_pipeline_dependencies)
@@ -492,6 +513,7 @@ pub fn get_service_routes(svc: &mut web::ServiceConfig) {
         .service(dashboards::list_dashboards)
         .service(dashboards::get_dashboard)
         .service(dashboards::export_dashboard)
+        .service(dashboards::delete_dashboard_bulk)
         .service(dashboards::delete_dashboard)
         .service(dashboards::move_dashboard)
         .service(dashboards::move_dashboards)
@@ -499,6 +521,7 @@ pub fn get_service_routes(svc: &mut web::ServiceConfig) {
         .service(dashboards::reports::update_report)
         .service(dashboards::reports::get_report)
         .service(dashboards::reports::list_reports)
+        .service(dashboards::reports::delete_report_bulk)
         .service(dashboards::reports::delete_report)
         .service(dashboards::reports::enable_report)
         .service(dashboards::reports::trigger_report)
@@ -524,6 +547,7 @@ pub fn get_service_routes(svc: &mut web::ServiceConfig) {
         .service(alerts::incidents::list_incidents)
         .service(alerts::incidents::get_incident_stats)
         .service(alerts::incidents::trigger_incident_rca)
+        .service(alerts::incidents::get_incident_service_graph)
         .service(alerts::incidents::get_incident)
         .service(alerts::incidents::update_incident_status)
         // Agent chat routes (enterprise only, but always exposed in API)
@@ -531,11 +555,13 @@ pub fn get_service_routes(svc: &mut web::ServiceConfig) {
         .service(alerts::get_alert)
         .service(alerts::export_alert)
         .service(alerts::update_alert)
+        .service(alerts::delete_alert_bulk)
         .service(alerts::delete_alert)
         .service(alerts::list_alerts)
         .service(alerts::enable_alert)
         .service(alerts::enable_alert_bulk)
         .service(alerts::trigger_alert)
+        .service(alerts::generate_sql)
         .service(alerts::move_alerts)
         .service(alerts::history::get_alert_history)
         .service(alerts::dedup_stats::get_dedup_summary)
@@ -550,45 +576,42 @@ pub fn get_service_routes(svc: &mut web::ServiceConfig) {
         .service(alerts::templates::save_template)
         .service(alerts::templates::update_template)
         .service(alerts::templates::get_template)
+        .service(alerts::templates::delete_template_bulk)
         .service(alerts::templates::delete_template)
         .service(alerts::templates::list_templates)
         .service(alerts::destinations::save_destination)
         .service(alerts::destinations::update_destination)
         .service(alerts::destinations::get_destination)
         .service(alerts::destinations::list_destinations)
+        .service(alerts::destinations::delete_destination_bulk)
         .service(alerts::destinations::delete_destination)
         .service(kv::get)
         .service(kv::set)
         .service(kv::delete)
         .service(kv::list)
         .service(enrichment_table::save_enrichment_table)
+        .service(enrichment_table::save_enrichment_table_from_url)
+        .service(enrichment_table::get_all_enrichment_table_statuses)
         .service(logs::ingest::handle_kinesis_request)
         .service(logs::ingest::handle_gcp_request)
         .service(organization::org::create_org)
-        .service(authz::fga::create_role)
         .service(organization::org::rename_org)
-        .service(authz::fga::get_roles)
-        .service(authz::fga::update_role)
-        .service(authz::fga::get_role_permissions)
-        .service(authz::fga::create_group)
-        .service(authz::fga::update_group)
-        .service(authz::fga::get_groups)
-        .service(authz::fga::get_group_details)
-        .service(authz::fga::get_resources)
-        .service(authz::fga::get_users_with_role)
-        .service(authz::fga::get_roles_for_user)
-        .service(authz::fga::get_groups_for_user)
-        .service(authz::fga::delete_role)
-        .service(authz::fga::delete_group)
         .service(clusters::list_clusters)
         .service(pipeline::save_pipeline)
         .service(pipeline::update_pipeline)
         .service(pipeline::list_pipelines)
         .service(pipeline::list_streams_with_pipeline)
+        .service(pipeline::delete_pipeline_bulk)
         .service(pipeline::delete_pipeline)
         .service(pipeline::enable_pipeline)
         .service(pipeline::enable_pipeline_bulk)
         .service(pipelines::history::get_pipeline_history)
+        .service(pipelines::backfill::create_backfill)
+        .service(pipelines::backfill::list_backfills)
+        .service(pipelines::backfill::get_backfill)
+        .service(pipelines::backfill::enable_backfill)
+        .service(pipelines::backfill::update_backfill)
+        .service(pipelines::backfill::delete_backfill)
         .service(search::multi_streams::search_multi)
         .service(search::multi_streams::search_multi_stream)
         .service(search::multi_streams::_search_partition_multi)
@@ -598,6 +621,7 @@ pub fn get_service_routes(svc: &mut web::ServiceConfig) {
         .service(short_url::retrieve)
         .service(service_accounts::list)
         .service(service_accounts::save)
+        .service(service_accounts::delete_bulk)
         .service(service_accounts::delete)
         .service(service_accounts::update)
         .service(service_accounts::get_api_token)
@@ -623,6 +647,7 @@ pub fn get_service_routes(svc: &mut web::ServiceConfig) {
         .service(search::query_manager::cancel_multiple_query)
         .service(search::query_manager::cancel_query)
         .service(keys::get)
+        .service(keys::delete_bulk)
         .service(keys::delete)
         .service(keys::save)
         .service(keys::list)
@@ -632,6 +657,7 @@ pub fn get_service_routes(svc: &mut web::ServiceConfig) {
         .service(actions::action::upload_zipped_action)
         .service(actions::action::update_action_details)
         .service(actions::action::serve_action_zip)
+        .service(actions::action::delete_action_bulk)
         .service(actions::action::delete_action)
         .service(ratelimit::list_module_ratelimit)
         .service(ratelimit::list_role_ratelimit)
@@ -650,6 +676,7 @@ pub fn get_service_routes(svc: &mut web::ServiceConfig) {
         .service(re_pattern::save)
         .service(re_pattern::get)
         .service(re_pattern::update)
+        .service(re_pattern::delete_bulk)
         .service(re_pattern::delete)
         .service(domain_management::get_domain_management_config)
         .service(domain_management::set_domain_management_config)
@@ -665,6 +692,42 @@ pub fn get_service_routes(svc: &mut web::ServiceConfig) {
         .service(service_streams::get_dimension_analytics)
         .service(service_streams::correlate_streams)
         .service(service_streams::get_services_grouped);
+    
+    // RBAC routes - only register when visdata is NOT enabled (use enterprise/community version)
+    #[cfg(not(feature = "visdata"))]
+    let service = service
+        .service(authz::fga::create_role)
+        .service(authz::fga::get_roles)
+        .service(authz::fga::update_role)
+        .service(authz::fga::get_role_permissions)
+        .service(authz::fga::create_group)
+        .service(authz::fga::update_group)
+        .service(authz::fga::get_groups)
+        .service(authz::fga::get_group_details)
+        .service(authz::fga::get_resources)
+        .service(authz::fga::get_users_with_role)
+        .service(authz::fga::get_roles_for_user)
+        .service(authz::fga::get_groups_for_user)
+        .service(authz::fga::delete_role)
+        .service(authz::fga::delete_group);
+
+    // RBAC routes - use visdata handlers when visdata is enabled
+    #[cfg(feature = "visdata")]
+    let service = service
+        .service(authz::visdata_fga::create_role)
+        .service(authz::visdata_fga::get_roles)
+        .service(authz::visdata_fga::update_role)
+        .service(authz::visdata_fga::delete_role)
+        .service(authz::visdata_fga::get_role_permissions)
+        .service(authz::visdata_fga::get_users_with_role)
+        .service(authz::visdata_fga::create_group)
+        .service(authz::visdata_fga::get_groups)
+        .service(authz::visdata_fga::get_group_details)
+        .service(authz::visdata_fga::update_group)
+        .service(authz::visdata_fga::delete_group)
+        .service(authz::visdata_fga::get_roles_for_user)
+        .service(authz::visdata_fga::get_groups_for_user)
+        .service(authz::visdata_fga::get_resources);
 
     #[cfg(feature = "cloud")]
     let service = service
@@ -719,6 +782,35 @@ pub fn get_other_service_routes(svc: &mut web::ServiceConfig) {
             .service(rum::ingest::log)
             .service(rum::ingest::sessionreplay)
             .service(rum::ingest::data),
+    );
+}
+
+/// VisData Enterprise Routes (OpenFGA + Dex)
+/// These routes provide SSO functionality using Dex
+/// Note: RBAC routes are registered in get_service_routes with #[cfg(feature = "visdata")]
+#[cfg(feature = "visdata")]
+pub fn get_visdata_routes(svc: &mut web::ServiceConfig) {
+    let cors = get_cors();
+
+    // Auth routes (public - no authentication required)
+    svc.service(
+        web::scope("/auth")
+            .wrap(cors.clone())
+            .service(visdata::auth::handler::post_login)
+            .service(visdata::auth::handler::get_login)
+            .service(visdata::auth::handler::refresh_token_handler)
+            .service(visdata::auth::handler::logout),
+    );
+
+    // SSO routes
+    svc.service(
+        web::scope("")
+            .wrap(cors)
+            .service(visdata::auth::handler::list_providers)
+            .service(visdata::auth::handler::create_oidc_provider)
+            .service(visdata::auth::handler::create_ldap_provider)
+            .service(visdata::auth::handler::sso_login)
+            .service(visdata::auth::handler::sso_callback),
     );
 }
 

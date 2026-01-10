@@ -70,7 +70,8 @@ use crate::{
         (status = 400, description = "Failure", content_type = "application/json", body = ()),
     ),
     extensions(
-        ("x-o2-ratelimit" = json!({"module": "Streams", "operation": "get"}))
+        ("x-o2-ratelimit" = json!({"module": "Streams", "operation": "get"})),
+        ("x-o2-mcp" = json!({"description": "Get stream schema"}))
     )
 )]
 #[get("/{org_id}/streams/{stream_name}/schema")]
@@ -157,7 +158,8 @@ async fn schema(
         (status = 500, description = "Failure", content_type = "application/json", body = ()),
     ),
     extensions(
-        ("x-o2-ratelimit" = json!({"module": "Streams", "operation": "create"}))
+        ("x-o2-ratelimit" = json!({"module": "Streams", "operation": "create"})),
+        ("x-o2-mcp" = json!({"description": "Create a new stream"}))
     )
 )]
 #[post("/{org_id}/streams/{stream_name}")]
@@ -207,7 +209,8 @@ async fn create(
         (status = 500, description = "Failure", content_type = "application/json", body = ()),
     ),
     extensions(
-        ("x-o2-ratelimit" = json!({"module": "Streams", "operation": "update"}))
+        ("x-o2-ratelimit" = json!({"module": "Streams", "operation": "update"})),
+        ("x-o2-mcp" = json!({"description": "Update stream settings"}))
     )
 )]
 #[put("/{org_id}/streams/{stream_name}/settings")]
@@ -253,6 +256,9 @@ async fn update_settings(
     responses(
         (status = 200, description = "Success", content_type = "application/json", body = Object),
         (status = 400, description = "Failure", content_type = "application/json", body = Object),
+    ),
+    extensions(
+        ("x-o2-mcp" = json!({"enabled": false}))
     )
 )]
 #[put("/{org_id}/streams/{stream_name}/update_fields")]
@@ -309,7 +315,8 @@ async fn update_fields(
         (status = 404, description = "NotFound", content_type = "application/json", body = ()),
     ),
     extensions(
-        ("x-o2-ratelimit" = json!({"module": "Streams", "operation": "delete"}))
+        ("x-o2-ratelimit" = json!({"module": "Streams", "operation": "delete"})),
+        ("x-o2-mcp" = json!({"enabled": false}))
     )
 )]
 #[put("/{org_id}/streams/{stream_name}/delete_fields")]
@@ -363,7 +370,8 @@ async fn delete_fields(
         (status = 400, description = "Failure", content_type = "application/json", body = ()),
     ),
     extensions(
-        ("x-o2-ratelimit" = json!({"module": "Streams", "operation": "delete"}))
+        ("x-o2-ratelimit" = json!({"module": "Streams", "operation": "delete"})),
+        ("x-o2-mcp" = json!({"description": "Delete a stream"}))
     )
 )]
 #[delete("/{org_id}/streams/{stream_name}")]
@@ -371,10 +379,7 @@ async fn delete(
     path: web::Path<(String, String)>,
     req: HttpRequest,
 ) -> Result<HttpResponse, Error> {
-    let (org_id, mut stream_name) = path.into_inner();
-    if !config::get_config().common.skip_formatting_stream_name {
-        stream_name = format_stream_name(stream_name);
-    }
+    let (org_id, stream_name) = path.into_inner();
     let query = web::Query::<HashMap<String, String>>::from_query(req.query_string()).unwrap();
     let stream_type = get_stream_type_from_request(&query).unwrap_or_default();
     let del_related_feature_resources = query
@@ -414,7 +419,8 @@ async fn delete(
         (status = 400, description = "Failure", content_type = "application/json", body = ()),
     ),
     extensions(
-        ("x-o2-ratelimit" = json!({"module": "Streams", "operation": "list"}))
+        ("x-o2-ratelimit" = json!({"module": "Streams", "operation": "list"})),
+        ("x-o2-mcp" = json!({"description": "List all streams"}))
     )
 )]
 #[get("/{org_id}/streams")]
@@ -584,7 +590,8 @@ fn stream_comparator(
         (status = 400, description = "Failure", content_type = "application/json", body = ()),
     ),
     extensions(
-        ("x-o2-ratelimit" = json!({"module": "Streams", "operation": "delete"}))
+        ("x-o2-ratelimit" = json!({"module": "Streams", "operation": "delete"})),
+        ("x-o2-mcp" = json!({"enabled": false}))
     )
 )]
 #[delete("/{org_id}/streams/{stream_name}/cache/results")]

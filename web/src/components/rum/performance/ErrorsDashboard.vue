@@ -20,7 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
   <q-page class="relative-position">
     <div
       class="performance-error-dashboard"
-      :class="isLoading.length ? 'tw-invisible' : 'tw-visible'"
+      :class="isLoading.length ? 'tw:invisible' : 'tw:visible'"
     >
       <div class="performance-dashboard">
         <RenderDashboardCharts
@@ -29,18 +29,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           :dashboardData="currentDashboardData.data"
           :currentTimeObj="dateTime"
           searchType="RUM"
+          @variablesManagerReady="onVariablesManagerReady"
         />
       </div>
     </div>
     <div
       v-show="isLoading.length"
-      class="q-pb-lg flex items-center justify-center text-center absolute full-width tw-h-[calc(100vh-15.625rem)] tw-top-0"
+      class="q-pb-lg flex items-center justify-center text-center absolute full-width tw:h-[calc(100vh-15.625rem)] tw:top-0"
     >
       <div>
         <q-spinner-hourglass
           color="primary"
           size="2.5rem"
-          class="tw-mx-auto tw-block"
+          class="tw:mx-auto tw:block"
         />
         <div class="text-center full-width">Loading Dashboard</div>
       </div>
@@ -82,7 +83,8 @@ export default defineComponent({
       default: () => ({}),
     },
   },
-  setup(props) {
+  emits: ["variablesManagerReady"],
+  setup(props, { emit }) {
     const { t } = useI18n();
     const store = useStore();
     const currentDashboardData = reactive({
@@ -124,10 +126,9 @@ export default defineComponent({
       window.dispatchEvent(new Event("resize"));
     };
 
-    // variables data
-    const variablesDataUpdated = (data: any) => {
-      if (JSON.stringify(variablesData.value) === JSON.stringify(data)) return;
-      variablesData.value = data;
+    // Variables manager event handler - pass through to parent
+    const onVariablesManagerReady = (manager: any) => {
+      emit("variablesManagerReady", manager);
     };
 
     const columns = [
@@ -177,7 +178,7 @@ export default defineComponent({
       refreshInterval,
       viewOnly,
       variablesData,
-      variablesDataUpdated,
+      onVariablesManagerReady,
       addSettingsData,
       showDashboardSettingsDialog,
       loadDashboard,

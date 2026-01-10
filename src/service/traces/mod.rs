@@ -32,7 +32,7 @@ use config::{
         stream::{PartitionTimeLevel, StreamParams, StreamPartition, StreamType},
     },
     metrics,
-    utils::{flatten, json, schema_ext::SchemaExt, time::now_micros},
+    utils::{flatten, json, schema_ext::SchemaExt, time::now_micros, util::DISTINCT_STREAM_PREFIX},
 };
 use infra::schema::{SchemaCache, unwrap_partition_time_level};
 use opentelemetry::trace::{SpanId, TraceId};
@@ -65,9 +65,7 @@ use crate::{
         },
         logs::O2IngestJsonData,
         metadata::{
-            MetadataItem, MetadataType,
-            distinct_values::{DISTINCT_STREAM_PREFIX, DvItem},
-            trace_list_index::TraceListItem,
+            MetadataItem, MetadataType, distinct_values::DvItem, trace_list_index::TraceListItem,
             write,
         },
         schema::{check_for_schema, stream_schema_exists},
@@ -215,12 +213,9 @@ pub async fn handle_otlp_request(
     let max_ts = now + cfg.limit.ingest_allowed_in_future_micro;
 
     // Start retrieving associated pipeline and construct pipeline params
-    let executable_pipeline = crate::service::ingestion::get_stream_executable_pipeline(
-        org_id,
-        &traces_stream_name,
-        &StreamType::Traces,
-    )
-    .await;
+    let stream_param = StreamParams::new(org_id, &traces_stream_name, StreamType::Traces);
+    let executable_pipeline =
+        crate::service::ingestion::get_stream_executable_pipeline(&stream_param).await;
     let mut stream_pipeline_inputs = Vec::new();
     // End pipeline params construction
 
@@ -228,13 +223,8 @@ pub async fn handle_otlp_request(
     let mut user_defined_schema_map: HashMap<String, Option<HashSet<String>>> = HashMap::new();
     let mut streams_need_original_map: HashMap<String, bool> = HashMap::new();
     let mut streams_need_all_values_map: HashMap<String, bool> = HashMap::new();
-    let streams = vec![StreamParams {
-        org_id: org_id.to_owned().into(),
-        stream_type: StreamType::Traces,
-        stream_name: traces_stream_name.to_owned().into(),
-    }];
     crate::service::ingestion::get_uds_and_original_data_streams(
-        &streams,
+        std::slice::from_ref(&stream_param),
         &mut user_defined_schema_map,
         &mut streams_need_original_map,
         &mut streams_need_all_values_map,

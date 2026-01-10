@@ -28,10 +28,10 @@ vi.mock("vuex", () => ({
 }));
 
 vi.mock("@/utils/dashboard/variables/variablesUtils", () => ({
-  processVariableContent: vi.fn((content, variables) => {
+  processVariableContent: vi.fn((content, variables, context) => {
     // Simple mock implementation that replaces {{variable}} patterns
     if (!content || typeof content !== 'string') return content;
-    
+
     let processedContent = content;
     for (const [key, value] of Object.entries(variables || {})) {
       const regex = new RegExp(`{{\\s*${key}\\s*}}`, 'g');
@@ -194,15 +194,16 @@ describe("MarkdownRenderer", () => {
   describe("Variable Processing", () => {
     it("should process variables in markdown content", async () => {
       const { processVariableContent } = await import("@/utils/dashboard/variables/variablesUtils");
-      
+
       wrapper = createWrapper({
         markdownContent: "# {{title}}\n\nWelcome {{userName}}!",
         variablesData: { title: "Dashboard", userName: "John" }
       });
-      
+
       expect(processVariableContent).toHaveBeenCalledWith(
         "# {{title}}\n\nWelcome {{userName}}!",
-        { title: "Dashboard", userName: "John" }
+        { title: "Dashboard", userName: "John" },
+        { panelId: undefined, tabId: undefined }
       );
     });
 
@@ -270,10 +271,10 @@ describe("MarkdownRenderer", () => {
       wrapper = createWrapper();
       
       const rendererElement = wrapper.find('[data-test="markdown-renderer"]');
-      expect(rendererElement.classes()).toContain('tw-prose');
-      expect(rendererElement.classes()).toContain('tw-prose-sm');
-      expect(rendererElement.classes()).toContain('tw-max-w-none');
-      expect(rendererElement.classes()).not.toContain('tw-prose-invert');
+      expect(rendererElement.classes()).toContain('tw:prose');
+      expect(rendererElement.classes()).toContain('tw:prose-sm');
+      expect(rendererElement.classes()).toContain('tw:max-w-none');
+      expect(rendererElement.classes()).not.toContain('tw:prose-invert');
     });
 
     it("should apply dark theme classes when theme is dark", () => {
@@ -290,8 +291,8 @@ describe("MarkdownRenderer", () => {
       });
       
       const rendererElement = wrapper.find('[data-test="markdown-renderer"]');
-      expect(rendererElement.classes()).toContain('tw-prose');
-      expect(rendererElement.classes()).toContain('tw-prose-invert');
+      expect(rendererElement.classes()).toContain('tw:prose');
+      expect(rendererElement.classes()).toContain('tw:prose-invert');
     });
 
     it("should toggle theme classes when theme changes", async () => {
@@ -299,7 +300,7 @@ describe("MarkdownRenderer", () => {
       wrapper = createWrapper();
       
       let rendererElement = wrapper.find('[data-test="markdown-renderer"]');
-      expect(rendererElement.classes()).not.toContain('tw-prose-invert');
+      expect(rendererElement.classes()).not.toContain('tw:prose-invert');
       
       // Unmount and recreate with dark theme to test the toggle effect
       wrapper.unmount();
@@ -316,7 +317,7 @@ describe("MarkdownRenderer", () => {
       });
       
       rendererElement = wrapper.find('[data-test="markdown-renderer"]');
-      expect(rendererElement.classes()).toContain('tw-prose-invert');
+      expect(rendererElement.classes()).toContain('tw:prose-invert');
     });
 
     it("should maintain theme classes with content updates", async () => {
@@ -337,7 +338,7 @@ describe("MarkdownRenderer", () => {
       await wrapper.setProps({ markdownContent: "# Updated content" });
       
       const rendererElement = wrapper.find('[data-test="markdown-renderer"]');
-      expect(rendererElement.classes()).toContain('tw-prose-invert');
+      expect(rendererElement.classes()).toContain('tw:prose-invert');
       expect(rendererElement.html()).toContain("Updated content");
     });
   });
@@ -433,9 +434,9 @@ describe("MarkdownRenderer", () => {
       wrapper = createWrapper();
       
       const rendererElement = wrapper.find('[data-test="markdown-renderer"]');
-      expect(rendererElement.classes()).toContain('tw-prose');
-      expect(rendererElement.classes()).toContain('tw-prose-sm');
-      expect(rendererElement.classes()).toContain('tw-max-w-none');
+      expect(rendererElement.classes()).toContain('tw:prose');
+      expect(rendererElement.classes()).toContain('tw:prose-sm');
+      expect(rendererElement.classes()).toContain('tw:max-w-none');
     });
 
     it("should handle overflow content properly", () => {

@@ -39,7 +39,8 @@ use {
     serde_json::Value,
     std::collections::HashMap,
 };
-
+#[cfg(all(feature = "visdata", not(feature = "enterprise")))]
+use {once_cell::sync::Lazy, regex::Regex};
 #[cfg(feature = "cloud")]
 use crate::{
     common::meta::{
@@ -50,7 +51,7 @@ use crate::{
     service::self_reporting::cloud_events::{CloudEvent, EventType, enqueue_cloud_event},
 };
 
-#[cfg(feature = "enterprise")]
+#[cfg(any(feature = "enterprise", feature = "visdata"))]
 static RE_ROLE_NAME: Lazy<Regex> = Lazy::new(|| Regex::new(r"[^a-zA-Z0-9_]+").unwrap());
 
 #[cfg(feature = "enterprise")]
@@ -118,6 +119,7 @@ pub async fn process_token(
             source_orgs.push(UserOrg {
                 role,
                 name: dex_cfg.default_org.clone(),
+                org_name: dex_cfg.default_org.clone(),
                 token: Default::default(),
                 rum_token: Default::default(),
             });
@@ -132,7 +134,8 @@ pub async fn process_token(
                 } else {
                     source_orgs.push(UserOrg {
                         role: role_org.role,
-                        name: role_org.org,
+                        name: role_org.org.clone(),
+                        org_name: role_org.org,
                         token: Default::default(),
                         rum_token: Default::default(),
                     });
@@ -576,6 +579,7 @@ async fn map_group_to_custom_role(
                 organizations.push(UserOrg {
                     role: role.clone(),
                     name: org_name.clone(),
+                    org_name: org_name.clone(),
                     token: Default::default(),
                     rum_token: Default::default(),
                 });
@@ -585,6 +589,7 @@ async fn map_group_to_custom_role(
             organizations.push(UserOrg {
                 role: role.clone(),
                 name: dex_cfg.default_org.clone(),
+                org_name: dex_cfg.default_org.clone(),
                 token: Default::default(),
                 rum_token: Default::default(),
             });
@@ -664,6 +669,7 @@ async fn map_group_to_custom_role(
                 let new_org = UserOrg {
                     role: role.clone(),
                     name: org_name.clone(),
+                    org_name: org_name.clone(),
                     token: Default::default(),
                     rum_token: Default::default(),
                 };
@@ -748,7 +754,7 @@ fn format_role_name(org_id: &str, role: &str) -> String {
     format!("{org_id}/{role}")
 }
 
-#[cfg(feature = "enterprise")]
+#[cfg(any(feature = "enterprise", feature = "visdata"))]
 pub fn format_role_name_only(role: &str) -> String {
     RE_ROLE_NAME.replace_all(role, "_").to_string()
 }
@@ -833,6 +839,7 @@ pub async fn check_and_add_to_org(
                 identifier: ider::uuid(),
                 name: DEFAULT_ORG.to_string(),
                 org_type: USER_DEFAULT.to_owned(),
+                service_account: None,
             };
             match db::organization::save_org(&org).await {
                 Ok(_) => {
@@ -973,7 +980,7 @@ async fn process_custom_claim_parsing(
         let function_name = function_name.to_string();
         Box::pin(async move {
             match db::functions::get("_meta", &function_name).await {
-                Ok(func) => Ok(func.function),
+                Ok(func) => Ok(func), // Return full Transform object with trans_type
                 Err(e) => Err(anyhow::anyhow!(
                     "Failed to load function '{}' from _meta org: {}",
                     function_name,
@@ -982,7 +989,11 @@ async fn process_custom_claim_parsing(
             }
         })
             as std::pin::Pin<
-                Box<dyn std::future::Future<Output = Result<String, anyhow::Error>> + Send>,
+                Box<
+                    dyn std::future::Future<
+                            Output = Result<config::meta::function::Transform, anyhow::Error>,
+                        > + Send,
+                >,
             >
     };
 
@@ -1028,6 +1039,22 @@ async fn process_custom_claim_parsing(
         }
     };
 
+    let js_execute_fn = |function_content: &str, claims: Value| -> Result<Value, anyhow::Error> {
+        // Compile the JavaScript function
+        let js_config = crate::service::ingestion::compile_js_function(function_content, "_meta")
+            .map_err(|e| anyhow::anyhow!("JavaScript compilation failed: {}", e))?;
+
+        // Execute JavaScript with claims as input
+        let (result, error) =
+            crate::service::ingestion::apply_js_fn(&js_config, claims, "_meta", &[String::new()]);
+
+        if let Some(err) = error {
+            return Err(anyhow::anyhow!("JavaScript execution failed: {}", err));
+        }
+
+        Ok(result)
+    };
+
     let error_publish_fn =
         |error: o2_enterprise::enterprise::auth::claim_parser::ClaimParserError| {
             Box::pin(async move {
@@ -1064,6 +1091,7 @@ async fn process_custom_claim_parsing(
         function_loader_fn,
         vrl_compile_fn,
         vrl_execute_fn,
+        js_execute_fn,
         error_publish_fn,
     )
     .await
@@ -1090,6 +1118,7 @@ async fn process_custom_claim_parsing(
                 source_orgs.push(UserOrg {
                     role: UserRole::from_str(&dex_cfg.default_role).unwrap(),
                     name: assignment.org.clone(),
+                    org_name: assignment.org.clone(),
                     token: Default::default(),
                     rum_token: Default::default(),
                 });
@@ -1111,6 +1140,150 @@ async fn process_custom_claim_parsing(
             log::error!("Custom claim parsing failed: {}", e);
             None
         }
+    }
+}
+// ============================================================================
+// Visdata SSO Token Processing
+// ============================================================================
+
+/// Process token for visdata SSO login
+/// Creates or updates user in database after successful Dex authentication
+#[cfg(all(feature = "visdata", not(feature = "enterprise")))]
+pub async fn process_token_visdata(
+    user_email: &str,
+    user_name: &str,
+    given_name: &str,
+    family_name: &str,
+) -> Result<Option<(bool, bool)>, anyhow::Error> {
+    use config::meta::user::{DBUser, UserOrg, UserRole};
+    use std::str::FromStr;
+
+    use crate::service::{db, organization, users};
+
+    let visdata = visdata::Visdata::global();
+    let dex_cfg = visdata.dex_config();
+    let openfga_cfg = visdata.openfga_config();
+
+    // Check if the user exists in the database
+    let db_user = db::user::get_user_by_email(user_email).await;
+    let is_new_user = db_user.is_none();
+
+    if is_new_user {
+        log::info!("Visdata SSO: User {} does not exist, creating new user", user_email);
+
+        let default_role = UserRole::from_str(&dex_cfg.default_role).unwrap_or(UserRole::User);
+        let default_org = &dex_cfg.default_org;
+
+        // Create the organization if it doesn't exist
+        if let Err(e) = organization::check_and_create_org(default_org).await {
+            log::warn!("Visdata SSO: Failed to create org {}: {}", default_org, e);
+        }
+
+        // Build user organizations
+        let organizations = vec![UserOrg {
+            role: default_role,
+            name: default_org.clone(),
+            org_name: default_org.clone(),
+            token: config::ider::uuid(),
+            rum_token: Some(config::ider::uuid()),
+        }];
+
+        // Create the user
+        let new_db_user = DBUser {
+            email: user_email.to_owned(),
+            first_name: if given_name.is_empty() {
+                user_name.to_owned()
+            } else {
+                given_name.to_owned()
+            },
+            last_name: family_name.to_owned(),
+            password: String::new(), // SSO users don't need password
+            salt: config::ider::uuid(),
+            organizations,
+            is_external: true, // SSO user
+            password_ext: Some(String::new()),
+        };
+
+        match users::create_new_user(new_db_user).await {
+            Ok(_) => {
+                log::info!("Visdata SSO: User {} created successfully", user_email);
+
+                // Update OpenFGA tuples if enabled
+                if openfga_cfg.enabled {
+                    let mut tuples = vec![];
+
+                    // Add user to org tuples
+                    visdata::openfga::authorizer::authz::get_add_user_to_org_tuples(
+                        default_org,
+                        user_email,
+                        &dex_cfg.default_role,
+                        &mut tuples,
+                    );
+
+                    // Add new user creation tuple
+                    visdata::openfga::authorizer::authz::get_new_user_creation_tuple(
+                        user_email,
+                        &mut tuples,
+                    );
+
+                    if let Err(e) = visdata::openfga::authorizer::authz::update_tuples(tuples, vec![]).await {
+                        log::error!("Visdata SSO: Error updating OpenFGA tuples: {}", e);
+                    }
+                }
+
+                Ok(Some((true, false))) // new_user=true, pending_invites=false
+            }
+            Err(e) => {
+                log::error!("Visdata SSO: Error creating user {}: {}", user_email, e);
+                Err(anyhow::anyhow!("Failed to create user: {}", e))
+            }
+        }
+    } else {
+        // User already exists, sync user info from identity provider (LDAP/Dex)
+        log::info!("Visdata SSO: User {} already exists, syncing info from identity provider", user_email);
+
+        let mut db_user = db_user.unwrap();
+        let mut needs_update = false;
+
+        // Update first_name if changed
+        let new_first_name = if given_name.is_empty() {
+            user_name.to_owned()
+        } else {
+            given_name.to_owned()
+        };
+        if db_user.first_name != new_first_name {
+            log::info!("Visdata SSO: Updating first_name for user {} from '{}' to '{}'",
+                user_email, db_user.first_name, new_first_name);
+            db_user.first_name = new_first_name;
+            needs_update = true;
+        }
+
+        // Update last_name if changed
+        if db_user.last_name != family_name {
+            log::info!("Visdata SSO: Updating last_name for user {} from '{}' to '{}'",
+                user_email, db_user.last_name, family_name);
+            db_user.last_name = family_name.to_owned();
+            needs_update = true;
+        }
+
+        // Only update database if there are changes
+        if needs_update {
+            // Update user info (password and password_ext are not changed for SSO users)
+            if let Err(e) = db::user::update(
+                user_email,
+                &db_user.first_name,
+                &db_user.last_name,
+                &db_user.password,
+                db_user.password_ext.clone(),
+            ).await {
+                log::error!("Visdata SSO: Error updating user info for {}: {}", user_email, e);
+                // Don't fail login if update fails, just log the error
+            } else {
+                log::info!("Visdata SSO: User {} info synced from identity provider", user_email);
+            }
+        }
+
+        Ok(Some((false, false))) // new_user=false, pending_invites=false
     }
 }
 

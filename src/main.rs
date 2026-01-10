@@ -1,4 +1,4 @@
-// Copyright 2025 OpenObserve Inc.
+// Copyright 2026 OpenObserve Inc.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published by
@@ -306,7 +306,13 @@ async fn main() -> Result<(), anyhow::Error> {
                 job_init_tx.send(false).ok();
                 panic!("enterprise init failed: {e}");
             }
-
+            
+            // init visdata (OpenFGA + Dex)
+            #[cfg(feature = "visdata")]
+            if let Err(e) = crate::init_visdata().await {
+                job_init_tx.send(false).ok();
+                panic!("visdata init failed: {e}");
+            }
             // ingester init
             if let Err(e) = ingester::init().await {
                 job_init_tx.send(false).ok();
@@ -780,8 +786,6 @@ async fn init_http_server() -> Result<(), anyhow::Error> {
         log::info!("Starting {scheme} server at: {haddr}, thread_id: {local_id}");
         let mut app = App::new();
         if config::cluster::LOCAL_NODE.is_router() {
-            let http_client =
-                router::http::create_http_client().expect("Failed to create http tls client");
             let factory = web::scope(&cfg.common.base_uri);
             #[cfg(feature = "enterprise")]
             let factory = factory.wrap(
@@ -790,22 +794,21 @@ async fn init_http_server() -> Result<(), anyhow::Error> {
                 )),
             );
 
-            app = app
-                .service(
-                    // if `cfg.common.base_uri` is empty, scope("") still works as expected.
-                    factory
-                        .wrap(middlewares::SlowLog::new(cfg.limit.http_slow_log_threshold))
-                        .service(get_metrics)
-                        .service(router::http::config)
-                        .service(router::http::config_paths)
-                        .service(router::http::api)
-                        .service(router::http::aws)
-                        .service(router::http::gcp)
-                        .service(router::http::rum)
-                        .configure(get_basic_routes)
-                        .configure(get_proxy_routes),
-                )
-                .app_data(web::Data::new(http_client))
+            app = app.service(
+                // if `cfg.common.base_uri` is empty, scope("") still works as expected.
+                factory
+                    .wrap(middlewares::SlowLog::new(cfg.limit.http_slow_log_threshold))
+                    .service(get_metrics)
+                    .configure(get_config_routes)
+                    .service(router::http::config)
+                    .service(router::http::config_paths)
+                    .service(router::http::api)
+                    .service(router::http::aws)
+                    .service(router::http::gcp)
+                    .service(router::http::rum)
+                    .configure(get_basic_routes)
+                    .configure(get_proxy_routes),
+            )
         } else {
             app = app.service({
                 let scope = web::scope(&cfg.common.base_uri)
@@ -818,6 +821,8 @@ async fn init_http_server() -> Result<(), anyhow::Error> {
                     .configure(get_proxy_routes);
                 #[cfg(feature = "enterprise")]
                 let scope = scope.configure(get_script_server_routes);
+                #[cfg(feature = "visdata")]
+                let scope = scope.configure(get_visdata_routes);
                 scope
             })
         }
@@ -884,8 +889,6 @@ async fn init_http_server_without_tracing() -> Result<(), anyhow::Error> {
 
         let mut app = App::new();
         if config::cluster::LOCAL_NODE.is_router() {
-            let http_client =
-                router::http::create_http_client().expect("Failed to create http tls client");
             let factory = web::scope(&cfg.common.base_uri);
             #[cfg(feature = "enterprise")]
             let factory = factory.wrap(
@@ -894,22 +897,21 @@ async fn init_http_server_without_tracing() -> Result<(), anyhow::Error> {
                 )),
             );
 
-            app = app
-                .service(
-                    // if `cfg.common.base_uri` is empty, scope("") still works as expected.
-                    factory
-                        .wrap(middlewares::SlowLog::new(cfg.limit.http_slow_log_threshold))
-                        .service(get_metrics)
-                        .service(router::http::config)
-                        .service(router::http::config_paths)
-                        .service(router::http::api)
-                        .service(router::http::aws)
-                        .service(router::http::gcp)
-                        .service(router::http::rum)
-                        .configure(get_basic_routes)
-                        .configure(get_proxy_routes),
-                )
-                .app_data(web::Data::new(http_client))
+            app = app.service(
+                // if `cfg.common.base_uri` is empty, scope("") still works as expected.
+                factory
+                    .wrap(middlewares::SlowLog::new(cfg.limit.http_slow_log_threshold))
+                    .service(get_metrics)
+                    .configure(get_config_routes)
+                    .service(router::http::config)
+                    .service(router::http::config_paths)
+                    .service(router::http::api)
+                    .service(router::http::aws)
+                    .service(router::http::gcp)
+                    .service(router::http::rum)
+                    .configure(get_basic_routes)
+                    .configure(get_proxy_routes),
+            )
         } else {
             app = app.service({
                 let scope = web::scope(&cfg.common.base_uri)
@@ -922,6 +924,8 @@ async fn init_http_server_without_tracing() -> Result<(), anyhow::Error> {
                     .configure(get_proxy_routes);
                 #[cfg(feature = "enterprise")]
                 let scope = scope.configure(get_script_server_routes);
+                #[cfg(feature = "visdata")]
+                let scope = scope.configure(get_visdata_routes);
                 scope
             })
         }
@@ -1506,6 +1510,140 @@ fn check_ratelimit_config(cfg: &Config, o2cfg: &O2Config) -> Result<(), anyhow::
             "ratelimit rules refresh interval must be greater than or equal to 2 seconds"
         ));
     }
+    Ok(())
+}
+/// Initializes visdata enterprise features (OpenFGA + Dex)
+#[cfg(feature = "visdata")]
+async fn init_visdata() -> Result<(), anyhow::Error> {
+    use visdata::VisdataConfig;
+
+    let cfg = config::get_config();
+
+    // Helper to read env var with fallback prefixes: ZO_ first, then VISDATA_
+    fn get_env_with_fallback(zo_key: &str, visdata_key: &str, default: &str) -> String {
+        std::env::var(zo_key)
+            .or_else(|_| std::env::var(visdata_key))
+            .unwrap_or_else(|_| default.to_string())
+    }
+
+    fn get_env_bool_with_fallback(zo_key: &str, visdata_key: &str, default: bool) -> bool {
+        std::env::var(zo_key)
+            .or_else(|_| std::env::var(visdata_key))
+            .map(|v| v.to_lowercase() == "true")
+            .unwrap_or(default)
+    }
+
+    fn get_env_usize_with_fallback(zo_key: &str, visdata_key: &str, default: usize) -> usize {
+        std::env::var(zo_key)
+            .or_else(|_| std::env::var(visdata_key))
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(default)
+    }
+
+    fn get_env_f64_with_fallback(zo_key: &str, visdata_key: &str, default: f64) -> f64 {
+        std::env::var(zo_key)
+            .or_else(|_| std::env::var(visdata_key))
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(default)
+    }
+
+    // Build visdata config from environment variables
+    // Supports both ZO_* and VISDATA_* prefixes for compatibility
+    let visdata_config = VisdataConfig {
+        // Feature flags
+        rbac_enabled: get_env_bool_with_fallback("ZO_RBAC_ENABLED", "VISDATA_RBAC_ENABLED", true),
+        sso_enabled: get_env_bool_with_fallback("ZO_SSO_ENABLED", "VISDATA_SSO_ENABLED", true),
+        encryption_key: std::env::var("ZO_ENCRYPTION_KEY")
+            .or_else(|_| std::env::var("VISDATA_ENCRYPTION_KEY"))
+            .ok(),
+
+        // OpenFGA configuration
+        openfga_url: get_env_with_fallback(
+            "ZO_OPENFGA_URL",
+            "VISDATA_OPENFGA_URL",
+            "http://localhost:8080",
+        ),
+        openfga_store_name: get_env_with_fallback(
+            "ZO_OPENFGA_STORE_NAME",
+            "VISDATA_OPENFGA_STORE",
+            "openobserve",
+        ),
+
+        // Dex configuration
+        dex_grpc_url: get_env_with_fallback(
+            "ZO_DEX_GRPC_URL",
+            "VISDATA_DEX_GRPC_URL",
+            "http://localhost:5557",
+        ),
+        dex_issuer_url: get_env_with_fallback(
+            "ZO_DEX_ISSUER_URL",
+            "VISDATA_DEX_ISSUER_URL",
+            "http://localhost:5556",
+        ),
+        dex_client_id: get_env_with_fallback(
+            "ZO_DEX_CLIENT_ID",
+            "VISDATA_DEX_CLIENT_ID",
+            "openobserve",
+        ),
+        dex_client_secret: get_env_with_fallback(
+            "ZO_DEX_CLIENT_SECRET",
+            "VISDATA_DEX_CLIENT_SECRET",
+            "",
+        ),
+        dex_redirect_uri: std::env::var("ZO_DEX_REDIRECT_URI")
+            .or_else(|_| std::env::var("VISDATA_DEX_REDIRECT_URI"))
+            .unwrap_or_else(|_| format!("{}/config/redirect", cfg.common.web_url)),
+
+        // Cache configuration (use defaults)
+        cache: visdata::config::CacheConfig::default(),
+
+        // Log Patterns configuration
+        // Supports both ZO_* and VISDATA_* prefixes
+        log_patterns_max_logs: get_env_usize_with_fallback(
+            "ZO_LOG_PATTERNS_MAX_LOGS",
+            "VISDATA_LOG_PATTERNS_MAX_LOGS",
+            10000,
+        ),
+        log_patterns_min_cluster_size: get_env_usize_with_fallback(
+            "ZO_LOG_PATTERNS_MIN_CLUSTER_SIZE",
+            "VISDATA_LOG_PATTERNS_MIN_CLUSTER_SIZE",
+            2,
+        ),
+        log_patterns_similarity_threshold: get_env_f64_with_fallback(
+            "ZO_LOG_PATTERNS_SIMILARITY_THRESHOLD",
+            "VISDATA_LOG_PATTERNS_SIMILARITY_THRESHOLD",
+            0.6,
+        ),
+        log_patterns_drain_depth: get_env_usize_with_fallback(
+            "ZO_LOG_PATTERNS_DRAIN_DEPTH",
+            "VISDATA_LOG_PATTERNS_DRAIN_DEPTH",
+            4,
+        ),
+        log_patterns_drain_max_child: get_env_usize_with_fallback(
+            "ZO_LOG_PATTERNS_DRAIN_MAX_CHILD",
+            "VISDATA_LOG_PATTERNS_DRAIN_MAX_CHILD",
+            100,
+        ),
+        log_patterns_max_clusters: get_env_usize_with_fallback(
+            "ZO_LOG_PATTERNS_MAX_CLUSTERS",
+            "VISDATA_LOG_PATTERNS_MAX_CLUSTERS",
+            1000,
+        ),
+    };
+
+    log::info!(
+        "Initializing visdata with OpenFGA at {} and Dex at {}",
+        visdata_config.openfga_url,
+        visdata_config.dex_issuer_url
+    );
+
+    visdata::Visdata::init_enterprise(visdata_config)
+        .await
+        .map_err(|e| anyhow::anyhow!("visdata init failed: {}", e))?;
+
+    log::info!("Visdata enterprise module initialized successfully");
     Ok(())
 }
 

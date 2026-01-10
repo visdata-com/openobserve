@@ -189,6 +189,13 @@ vi.mock("@/utils/dashboard/checkConfigChangeApiCall", () => ({
   checkIfConfigChangeRequiredApiCallOrNot: vi.fn(() => shouldRequireApiCall),
 }));
 
+// Mock logsUtils
+vi.mock("@/composables/useLogs/logsUtils", () => ({
+  default: () => ({
+    checkTimestampAlias: vi.fn(() => true), // Always return true to allow queries
+  }),
+}));
+
 // Mock Vue's onMounted and onUnmounted to avoid warnings
 vi.mock("vue", async () => {
   const actual = await vi.importActual("vue");
@@ -320,14 +327,16 @@ describe("usePanelDataLoader", () => {
     vi.spyOn(global, "clearTimeout").mockImplementation(() => {});
 
     // Mock AbortController
-    global.AbortController = vi.fn().mockImplementation(() => ({
-      signal: {
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-        aborted: false,
-      },
-      abort: vi.fn(),
-    }));
+    global.AbortController = vi.fn(function() {
+      return {
+        signal: {
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          aborted: false,
+        },
+        abort: vi.fn(),
+      };
+    }) as any;
 
     // Mock window.addEventListener and removeEventListener 
     vi.spyOn(window, 'addEventListener').mockImplementation(() => {});
@@ -1929,12 +1938,16 @@ describe("usePanelDataLoader", () => {
         });
         const selectedTimeObj = createMockSelectedTimeObj();
         const variablesData = ref({
+          isVariablesLoading: false,
           values: [
             {
               name: "service",
               type: "constant",
               value: "web-service",
               escapeSingleQuotes: false,
+              isLoading: false,
+              isVariableLoadingPending: false,
+              isVariablePartialLoaded: true,
             },
           ],
         });
@@ -1972,6 +1985,7 @@ describe("usePanelDataLoader", () => {
         });
         const selectedTimeObj = createMockSelectedTimeObj();
         const variablesData = ref({
+          isVariablesLoading: false,
           values: [
             {
               name: "services",
@@ -1979,6 +1993,9 @@ describe("usePanelDataLoader", () => {
               value: ["web", "api", "db"],
               multiSelect: true,
               escapeSingleQuotes: true,
+              isLoading: false,
+              isVariableLoadingPending: false,
+              isVariablePartialLoaded: true,
             },
           ],
         });
@@ -2016,12 +2033,16 @@ describe("usePanelDataLoader", () => {
         });
         const selectedTimeObj = createMockSelectedTimeObj();
         const variablesData = ref({
+          isVariablesLoading: false,
           values: [
             {
               name: "services",
               type: "constant",
               value: ["web", "api"],
               multiSelect: true,
+              isLoading: false,
+              isVariableLoadingPending: false,
+              isVariablePartialLoaded: true,
             },
           ],
         });
@@ -2059,12 +2080,16 @@ describe("usePanelDataLoader", () => {
         });
         const selectedTimeObj = createMockSelectedTimeObj();
         const variablesData = ref({
+          isVariablesLoading: false,
           values: [
             {
               name: "services",
               type: "constant",
               value: ["web", "api"],
               multiSelect: true,
+              isLoading: false,
+              isVariableLoadingPending: false,
+              isVariablePartialLoaded: true,
             },
           ],
         });
@@ -2102,12 +2127,16 @@ describe("usePanelDataLoader", () => {
         });
         const selectedTimeObj = createMockSelectedTimeObj();
         const variablesData = ref({
+          isVariablesLoading: false,
           values: [
             {
               name: "services",
               type: "constant",
               value: ["web", "api"],
               multiSelect: true,
+              isLoading: false,
+              isVariableLoadingPending: false,
+              isVariablePartialLoaded: true,
             },
           ],
         });
@@ -2138,18 +2167,23 @@ describe("usePanelDataLoader", () => {
         const panelSchema = createMockPanelSchema({
           queries: [
             {
-              query: "SELECT * FROM logs WHERE service = $service",
+              // Use a variable that's NOT in the query to avoid the waiting logic
+              query: "SELECT * FROM logs",
               fields: { stream_type: "logs" },
             },
           ],
         });
         const selectedTimeObj = createMockSelectedTimeObj();
         const variablesData = ref({
+          isVariablesLoading: false,
           values: [
             {
               name: "service",
               type: "constant",
               value: null,
+              isLoading: false,
+              isVariableLoadingPending: false,
+              isVariablePartialLoaded: true,
             },
           ],
         });
@@ -2401,12 +2435,16 @@ describe("usePanelDataLoader", () => {
           ],
         });
         const variablesData = ref({
+          isVariablesLoading: false,
           values: [
             {
               name: "services",
               type: "constant",
               value: ["web", "api"],
               multiSelect: true,
+              isLoading: false,
+              isVariableLoadingPending: false,
+              isVariablePartialLoaded: true,
             },
           ],
         });
@@ -2437,18 +2475,23 @@ describe("usePanelDataLoader", () => {
         const panelSchema = createMockPanelSchema({
           queries: [
             {
-              query: "SELECT * FROM logs WHERE service = $service",
+              // Use a variable that's NOT in the query to avoid the waiting logic
+              query: "SELECT * FROM logs",
               fields: { stream_type: "logs" },
             },
           ],
         });
         const selectedTimeObj = createMockSelectedTimeObj();
         const variablesData = ref({
+          isVariablesLoading: false,
           values: [
             {
               name: "service",
               type: "constant",
               value: null,
+              isLoading: false,
+              isVariableLoadingPending: false,
+              isVariablePartialLoaded: true,
             },
           ],
         });
@@ -2479,19 +2522,24 @@ describe("usePanelDataLoader", () => {
         const panelSchema = createMockPanelSchema({
           queries: [
             {
-              query: "SELECT * FROM logs WHERE service IN (${services:singlequote})",
+              // Use a variable that's NOT in the query to avoid the waiting logic
+              query: "SELECT * FROM logs",
               fields: { stream_type: "logs" },
             },
           ],
         });
         const selectedTimeObj = createMockSelectedTimeObj();
         const variablesData = ref({
+          isVariablesLoading: false,
           values: [
             {
               name: "services",
               type: "constant",
               value: [],
               multiSelect: true,
+              isLoading: false,
+              isVariableLoadingPending: false,
+              isVariablePartialLoaded: true,
             },
           ],
         });
@@ -2799,14 +2847,16 @@ describe("usePanelDataLoader", () => {
         const variablesData = createMockVariablesData();
 
         // Mock AbortController to throw abort error
-        global.AbortController = vi.fn().mockImplementation(() => ({
-          signal: {
-            addEventListener: vi.fn(),
-            removeEventListener: vi.fn(),
-            aborted: false,
-          },
-          abort: vi.fn(),
-        }));
+        global.AbortController = vi.fn(function() {
+          return {
+            signal: {
+              addEventListener: vi.fn(),
+              removeEventListener: vi.fn(),
+              aborted: false,
+            },
+            abort: vi.fn(),
+          };
+        }) as any;
 
         const loader = usePanelDataLoader(
           panelSchema,
@@ -2861,6 +2911,7 @@ describe("usePanelDataLoader", () => {
         panelSchema,
         createMockSelectedTimeObj(),
         ref({
+          isVariablesLoading: false,
           values: [
             {
               name: "service",
@@ -2868,6 +2919,9 @@ describe("usePanelDataLoader", () => {
               value: "web",
               multiSelect: false,
               escapeSingleQuotes: true,
+              isLoading: false,
+              isVariableLoadingPending: false,
+              isVariablePartialLoaded: true,
             },
             {
               name: "filters",

@@ -43,6 +43,7 @@ use crate::{
     common::{
         meta::{
             self,
+            http::HttpResponse as MetaHttpResponse,
             user::{
                 AuthTokens, PostUserRequest, RolesResponse, SignInResponse, SignInUser, UpdateUser,
                 UserOrgRole, UserRequest, UserRoleRequest, UserUpdateMode, get_roles,
@@ -50,7 +51,10 @@ use crate::{
         },
         utils::auth::{UserEmail, generate_presigned_url, is_valid_email},
     },
-    handler::http::extractors::Headers,
+    handler::http::{
+        extractors::Headers,
+        request::{BulkDeleteRequest, BulkDeleteResponse},
+    },
     service::users,
 };
 
@@ -76,7 +80,8 @@ pub mod service_accounts;
         (status = 200, description = "Success", content_type = "application/json", body = Object),
     ),
     extensions(
-        ("x-o2-ratelimit" = json!({"module": "Users", "operation": "list"}))
+        ("x-o2-ratelimit" = json!({"module": "Users", "operation": "list"})),
+        ("x-o2-mcp" = json!({"description": "List all users"}))
     )
 )]
 #[get("/{org_id}/users")]
@@ -98,12 +103,12 @@ pub async fn list(
     // Check if user has access to get users
     if get_openfga_config().enabled
         && check_permissions(
-            Some(format!("_all_{org_id}")),
+            &format!("_all_{org_id}"),
             &org_id,
             &user_email.user_id,
             "users",
             "GET",
-            "",
+            None,
         )
         .await
     {
@@ -141,7 +146,8 @@ pub async fn list(
         (status = 200, description = "Success", content_type = "application/json", body = Object),
     ),
     extensions(
-        ("x-o2-ratelimit" = json!({"module": "Users", "operation": "create"}))
+        ("x-o2-ratelimit" = json!({"module": "Users", "operation": "create"})),
+        ("x-o2-mcp" = json!({"description": "Create a new user"}))
     )
 )]
 #[post("/{org_id}/users")]
@@ -202,7 +208,8 @@ pub async fn save(
         (status = 200, description = "Success", content_type = "application/json", body = Object),
     ),
     extensions(
-        ("x-o2-ratelimit" = json!({"module": "Users", "operation": "update"}))
+        ("x-o2-ratelimit" = json!({"module": "Users", "operation": "update"})),
+        ("x-o2-mcp" = json!({"description": "Update user details"}))
     )
 )]
 #[put("/{org_id}/users/{email_id}")]
@@ -213,9 +220,9 @@ pub async fn update(
 ) -> Result<HttpResponse, Error> {
     let (org_id, email_id) = params.into_inner();
     let email_id = email_id.trim().to_lowercase();
-    #[cfg(not(feature = "enterprise"))]
+    #[cfg(not(any(feature = "enterprise", feature = "visdata")))]
     let mut user = user.into_inner();
-    #[cfg(feature = "enterprise")]
+    #[cfg(any(feature = "enterprise", feature = "visdata"))]
     let user = user.into_inner();
     if user.eq(&UpdateUser::default()) {
         return Ok(
@@ -238,7 +245,7 @@ pub async fn update(
             )),
         );
     }
-    #[cfg(not(feature = "enterprise"))]
+    #[cfg(not(any(feature = "enterprise", feature = "visdata")))]
     {
         user.role = Some(UserRoleRequest {
             role: UserRole::Admin.to_string(),
@@ -275,7 +282,8 @@ pub async fn update(
         (status = 200, description = "Success", content_type = "application/json", body = Object),
     ),
     extensions(
-        ("x-o2-ratelimit" = json!({"module": "Users", "operation": "create"}))
+        ("x-o2-ratelimit" = json!({"module": "Users", "operation": "create"})),
+        ("x-o2-mcp" = json!({"description": "Add user to organization"}))
     )
 )]
 #[post("/{org_id}/users/{email_id}")]
@@ -331,7 +339,8 @@ fn _prepare_cookie<'a, T: Serialize + ?Sized, E: Into<cookie::Expiration>>(
         (status = 404, description = "NotFound", content_type = "application/json", body = ()),
     ),
     extensions(
-        ("x-o2-ratelimit" = json!({"module": "Users", "operation": "delete"}))
+        ("x-o2-ratelimit" = json!({"module": "Users", "operation": "delete"})),
+        ("x-o2-mcp" = json!({"description": "Remove user from organization"}))
     )
 )]
 #[delete("/{org_id}/users/{email_id}")]
@@ -342,6 +351,81 @@ pub async fn delete(
     let (org_id, email_id) = path.into_inner();
     let initiator_id = user_email.user_id;
     users::remove_user_from_org(&org_id, &email_id, &initiator_id).await
+}
+
+/// BulkRemoveUserFromOrganization
+#[utoipa::path(
+    context_path = "/api",
+    tag = "Users",
+    operation_id = "BulkRemoveUserFromOrg",
+    summary = "Remove multiple users from organization",
+    description = "Removes multiple users from the organization, immediately revoking their access to all organization resources, \
+                   data, and services. The user account itself remains active and can be added back to organizations \
+                   later. This action is permanent and cannot be undone without re-adding the user explicitly.",
+    security(
+        ("Authorization"= [])
+    ),
+    params(
+        ("org_id" = String, Path, description = "Organization name"),
+        ("email_id" = String, Path, description = "User name"),
+      ),
+    responses(
+        (status = 200, description = "Success", content_type = "application/json", body = Object),
+        (status = 404, description = "NotFound", content_type = "application/json", body = ()),
+    ),
+    extensions(
+        ("x-o2-ratelimit" = json!({"module": "Users", "operation": "delete"})),
+        ("x-o2-mcp" = json!({"enabled": false}))
+    )
+)]
+#[delete("/{org_id}/users/bulk")]
+pub async fn delete_bulk(
+    path: web::Path<String>,
+    Headers(user_email): Headers<UserEmail>,
+    req: web::Json<BulkDeleteRequest>,
+) -> Result<HttpResponse, Error> {
+    let org_id = path.into_inner();
+    let req = req.into_inner();
+    let initiator_id = user_email.user_id;
+
+    #[cfg(feature = "enterprise")]
+    for email in &req.ids {
+        if !check_permissions(email, &org_id, &initiator_id, "users", "DELETE", None).await {
+            return Ok(MetaHttpResponse::forbidden("Unauthorized Access"));
+        }
+    }
+
+    let mut successful = Vec::with_capacity(req.ids.len());
+    let mut unsuccessful = Vec::with_capacity(req.ids.len());
+    let mut err = None;
+
+    for email in req.ids {
+        match users::remove_user_from_org(&org_id, &email, &initiator_id).await {
+            Ok(v) => {
+                if v.status().is_success() {
+                    successful.push(email);
+                } else {
+                    log::error!(
+                        "error in deleting service account {org_id}/{email} : {:?}",
+                        v.status().canonical_reason()
+                    );
+                    unsuccessful.push(email);
+                    err = v.status().canonical_reason().map(|v| v.to_string());
+                }
+            }
+            Err(e) => {
+                log::error!("error in deleting service account {org_id}/{email} : {e}");
+                unsuccessful.push(email);
+                err = Some(e.to_string());
+            }
+        }
+    }
+
+    Ok(MetaHttpResponse::json(BulkDeleteResponse {
+        successful,
+        unsuccessful,
+        err,
+    }))
 }
 
 /// AuthenticateUser
@@ -359,7 +443,8 @@ context_path = "/auth",
         (status = 200, description = "Success", content_type = "application/json", body = inline(SignInResponse)),
     ),
     extensions(
-        ("x-o2-ratelimit" = json!({"module": "Users", "operation": "update"}))
+        ("x-o2-ratelimit" = json!({"module": "Users", "operation": "update"})),
+        ("x-o2-mcp" = json!({"enabled": false}))
     )
 )]
 #[post("/login")]
@@ -783,7 +868,7 @@ fn check_role_available(role: &UserRole) -> Option<RolesResponse> {
     if role.eq(&UserRole::Root) || role.eq(&UserRole::ServiceAccount) {
         None
     } else {
-        #[cfg(feature = "enterprise")]
+        #[cfg(all(feature = "enterprise", not(feature = "visdata")))]
         if !get_openfga_config().enabled && role.ne(&UserRole::Admin) {
             return None;
         }
@@ -908,6 +993,64 @@ pub async fn decline_invitation(
 #[cfg(not(feature = "cloud"))]
 #[get("/invites")]
 pub async fn list_invitations(Headers(_): Headers<UserEmail>) -> Result<HttpResponse, Error> {
+    Ok(HttpResponse::Forbidden().json("Not Supported"))
+}
+
+/// VerifyUser - Verify and get user information after SSO login
+/// This endpoint is called after SSO login to verify the user exists and get their info
+#[cfg(all(feature = "visdata", not(feature = "enterprise"), not(feature = "cloud")))]
+#[get("/users/verifyuser/{email_id}")]
+pub async fn verify_user(
+    email_id: web::Path<String>,
+    Headers(user_email): Headers<UserEmail>,
+) -> Result<HttpResponse, Error> {
+    let email_id = email_id.into_inner().trim().to_lowercase();
+
+    // Security check: only allow users to verify themselves
+    if user_email.user_id.to_lowercase() != email_id {
+        return Ok(HttpResponse::Forbidden().json(meta::http::HttpResponse::error(
+            http::StatusCode::FORBIDDEN,
+            "You can only verify your own user",
+        )));
+    }
+
+    // Get user from database (includes organizations)
+    match crate::service::db::user::get_db_user(&email_id).await {
+        Ok(user) => {
+            let response = serde_json::json!({
+                "status": true,
+                "data": {
+                    "email": user.email,
+                    "first_name": user.first_name,
+                    "last_name": user.last_name,
+                    "is_external": user.is_external,
+                    "organizations": user.organizations.iter().map(|o| {
+                        serde_json::json!({
+                            "name": o.name,
+                            "role": o.role.to_string(),
+                        })
+                    }).collect::<Vec<_>>(),
+                }
+            });
+            Ok(HttpResponse::Ok().json(response))
+        }
+        Err(_) => {
+            // User not found
+            let response = serde_json::json!({
+                "status": false,
+                "message": "User not found"
+            });
+            Ok(HttpResponse::NotFound().json(response))
+        }
+    }
+}
+
+/// VerifyUser - stub for non-visdata, non-enterprise, non-cloud builds
+#[cfg(all(not(feature = "visdata"), not(feature = "enterprise"), not(feature = "cloud")))]
+#[get("/users/verifyuser/{email_id}")]
+pub async fn verify_user(
+    _email_id: web::Path<String>,
+) -> Result<HttpResponse, Error> {
     Ok(HttpResponse::Forbidden().json("Not Supported"))
 }
 

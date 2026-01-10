@@ -15,48 +15,46 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 -->
 
 <template>
-  <div class="tw-flex-1 tw-overflow-hidden">
+  <div class="tw:flex-1 tw:overflow-hidden">
     <!-- Patterns Table -->
-    <div v-if="patterns?.length > 0" class="tw-flex tw-flex-col tw-h-full">
+    <div v-if="patterns?.length > 0" class="tw:flex tw:flex-col tw:h-full">
       <!-- Table Header -->
       <div
-        class="tw-flex tw-items-center tw-py-2 tw-px-3 tw-border-b tw-border-[var(--o2-border-color)] tw-sticky tw-top-0 tw-z-10"
-        :style="{
-          background: store.state.theme === 'dark' ? '#565656' : '#E0E0E0',
-        }"
+        class="tw:flex tw:items-center tw:border-b tw:border-[var(--o2-border-color)] tw:sticky tw:top-0 tw:z-10"
+        style="background: var(--o2-table-header-bg); min-width: 100%;"
       >
         <!-- Pattern Column Header -->
-        <div class="tw-flex-1 tw-min-w-0 tw-pr-1">
+        <div class="tw:flex-1 tw:min-w-0 tw:px-2 tw:relative table-head tw:text-ellipsis tw:text-left">
           <span
-            class="tw-text-xs text-weight-bold"
-            :class="store.state.theme === 'dark' ? 'text-grey-5' : 'text-grey-7'"
+            class="tw:font-bold"
+            :class="store.state.theme === 'dark' ? 'text-white' : 'text-grey-8'"
           >
             {{ t("search.patternColumnHeader") }}
           </span>
         </div>
 
         <!-- Occurrence Column Header -->
-        <div class="tw-w-16 tw-flex-shrink-0 tw-pr-1 tw-text-right">
+        <div class="tw:w-16 tw:flex-shrink-0 tw:px-2 tw:relative table-head tw:text-ellipsis tw:text-right">
           <span
-            class="tw-text-xs text-weight-bold"
-            :class="store.state.theme === 'dark' ? 'text-grey-5' : 'text-grey-7'"
+            class="tw:font-bold"
+            :class="store.state.theme === 'dark' ? 'text-white' : 'text-grey-8'"
           >
             {{ t("search.occurrenceColumnHeader") }}
           </span>
         </div>
 
         <!-- Percentage Column Header -->
-        <div class="tw-w-14 tw-flex-shrink-0 tw-pr-1 tw-text-right">
+        <div class="tw:w-14 tw:flex-shrink-0 tw:px-2 tw:relative table-head tw:text-ellipsis tw:text-right">
           <span
-            class="tw-text-xs text-weight-bold"
-            :class="store.state.theme === 'dark' ? 'text-grey-5' : 'text-grey-7'"
+            class="tw:font-bold"
+            :class="store.state.theme === 'dark' ? 'text-white' : 'text-grey-8'"
           >
             {{ t("search.percentageColumnHeader") }}
           </span>
         </div>
 
         <!-- Actions Column - No Header -->
-        <div class="tw-w-20 tw-flex-shrink-0">
+        <div class="tw:w-20 tw:flex-shrink-0 tw:px-2 tw:relative table-head">
         </div>
       </div>
 
@@ -65,7 +63,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         :items="patterns"
         virtual-scroll-slice-size="5"
         v-slot="{ item: pattern, index }"
-        class="tw-flex-1"
+        class="tw:flex-1"
       >
         <PatternCard
           :pattern="pattern"
@@ -80,7 +78,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     <!-- Loading State -->
     <div
       v-else-if="loading"
-      class="tw-flex-1 tw-flex tw-flex-col tw-items-center tw-justify-center"
+      class="tw:flex-1 tw:flex tw:flex-col tw:items-center tw:justify-center"
     >
       <q-spinner-hourglass color="primary" size="3.125rem" />
       <div
@@ -94,9 +92,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     <!-- Empty State -->
     <div
       v-else
-      class="tw-flex-1 tw-flex tw-flex-col tw-items-center tw-justify-center tw-p-[1.25rem] tw-text-center"
+      class="tw:flex-1 tw:flex tw:flex-col tw:items-center tw:justify-center tw:p-[1.25rem] tw:text-center"
     >
-      <div class="tw-text-[3rem] tw-mb-[1rem] tw-opacity-30">📊</div>
+      <div class="tw:text-[3rem] tw:mb-[1rem] tw:opacity-30">📊</div>
       <div
         class="text-h6 q-mb-sm"
         :class="store.state.theme === 'dark' ? 'text-grey-5' : 'text-grey-7'"
@@ -104,7 +102,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         No patterns found
       </div>
       <div
-        class="text-body2 tw-max-w-[31.25rem]"
+        class="text-body2 tw:max-w-[31.25rem]"
         :class="store.state.theme === 'dark' ? 'text-grey-6' : 'text-grey-8'"
       >
         <div v-if="totalLogsAnalyzed">

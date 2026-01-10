@@ -335,11 +335,18 @@ export function useLatencyInsightsDashboard() {
       // Determine unit and decimals
       let unit = "microseconds";
       let decimals = 2;
-      if (isVolumeAnalysis) {
+
+      if (config.streamType === "logs") {
+        unit = "numbers";
+      } else if (isVolumeAnalysis) {
         unit = "traces";
-        decimals = 0;
       } else if (isErrorAnalysis) {
         unit = "percent";
+      }
+
+      if (isVolumeAnalysis) {
+        decimals = 0;
+      } else if (isErrorAnalysis) {
         decimals = 2;
       }
 
@@ -360,6 +367,8 @@ export function useLatencyInsightsDashboard() {
           label_option: {
             rotate: 45,
           },
+          axis_label_rotate: 30,
+          axis_label_truncate_width: 80,
           color: isComparisonMode ? {
             mode: "palette-classic-by-series",
             fixedColor: ["#ffc107", "#1976d2"],

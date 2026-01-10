@@ -26,16 +26,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
   >
     <q-card class="analysis-dashboard-card">
       <!-- Header -->
-      <q-card-section class="analysis-header tw-flex tw-items-center tw-justify-between tw-py-3 tw-px-4 tw-border-b tw-border-solid tw-border-[var(--o2-border-color)]">
-        <div class="tw-flex tw-items-center tw-gap-3">
+      <q-card-section class="analysis-header tw:flex tw:items-center tw:justify-between tw:py-3 tw:px-4 tw:border-b tw:border-solid tw:border-[var(--o2-border-color)]">
+        <div class="tw:flex tw:items-center tw:gap-3">
           <q-icon name="dashboard" size="md" color="primary" />
-          <div class="tw-flex tw-flex-col tw-gap-0">
-            <span class="tw-text-lg tw-font-semibold">
+          <div class="tw:flex tw:flex-col tw:gap-0">
+            <span class="tw:text-lg tw:font-semibold">
               <template v-if="props.analysisType === 'latency'">{{ t('latencyInsights.title') }}</template>
               <template v-else-if="props.analysisType === 'volume'">{{ t('volumeInsights.title') }}</template>
               <template v-else-if="props.analysisType === 'error'">{{ t('errorInsights.title') }}</template>
             </span>
-            <span class="tw-text-xs tw-opacity-70">
+            <span class="tw:text-xs tw:opacity-70">
               <span v-if="props.analysisType === 'latency' && durationFilter">
                 {{ t('latencyInsights.durationLabel') }} {{ formatTimeWithSuffix(durationFilter.start) }} - {{ formatTimeWithSuffix(durationFilter.end) }}
               </span>
@@ -59,7 +59,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           </div>
         </div>
 
-        <div class="tw-flex tw-items-center tw-gap-3">
+        <div class="tw:flex tw:items-center tw:gap-3">
           <!-- Refresh button (shown when percentile changes on latency tab) -->
           <q-btn
             v-if="showRefreshButton"
@@ -107,7 +107,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         v-model="activeAnalysisType"
         dense
         inline-label
-        class="tw-border-b tw-border-solid tw-border-[var(--o2-border-color)]"
+        class="tw:border-b tw:border-solid tw:border-[var(--o2-border-color)]"
         active-color="primary"
         indicator-color="primary"
         align="left"
@@ -118,20 +118,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           :name="tab.name"
           :label="tab.label"
           :icon="tab.icon"
-          class="tw-min-h-[3rem]"
+          class="tw:min-h-[3rem]"
         />
       </q-tabs>
 
       <!-- Dashboard Content -->
-      <q-card-section class="analysis-content tw-flex-1 tw-overflow-auto tw-p-0">
+      <q-card-section class="analysis-content tw:flex-1 tw:overflow-auto tw:p-0">
         <!-- Loading State -->
         <div
           v-if="loading"
-          class="tw-flex tw-flex-col tw-items-center tw-justify-center tw-h-full tw-py-20"
+          class="tw:flex tw:flex-col tw:items-center tw:justify-center tw:h-full tw:py-20"
         >
-          <q-spinner-hourglass color="primary" size="3.75rem" class="tw-mb-4" />
-          <div class="tw-text-base">{{ t('latencyInsights.analyzingDimensions') }}</div>
-          <div class="tw-text-xs tw-text-gray-500 tw-mt-2">
+          <q-spinner-hourglass color="primary" size="3.75rem" class="tw:mb-4" />
+          <div class="tw:text-base">{{ t('latencyInsights.analyzingDimensions') }}</div>
+          <div class="tw:text-xs tw:text-gray-500 tw:mt-2">
             {{ t('latencyInsights.computingDistributions', { count: selectedDimensions.length }) }}
           </div>
         </div>
@@ -139,16 +139,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         <!-- Error State -->
         <div
           v-else-if="error"
-          class="tw-flex tw-flex-col tw-items-center tw-justify-center tw-h-full tw-py-20"
+          class="tw:flex tw:flex-col tw:items-center tw:justify-center tw:h-full tw:py-20"
         >
-          <q-icon name="error_outline" size="3.75rem" color="negative" class="tw-mb-4" />
-          <div class="tw-text-base tw-mb-2">{{ t('latencyInsights.failedToLoad') }}</div>
-          <div class="tw-text-sm tw-text-gray-500">{{ error }}</div>
+          <q-icon name="error_outline" size="3.75rem" color="negative" class="tw:mb-4" />
+          <div class="tw:text-base tw:mb-2">{{ t('latencyInsights.failedToLoad') }}</div>
+          <div class="tw:text-sm tw:text-gray-500">{{ error }}</div>
           <q-btn
             outline
             color="primary"
             :label="t('latencyInsights.retryButton')"
-            class="tw-mt-4"
+            class="tw:mt-4"
             @click="loadAnalysis"
           />
         </div>
@@ -163,8 +163,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           :viewOnly="true"
           :allowAlertCreation="false"
           searchType="dashboards"
-          @variablesData="handleVariablesDataChange"
-          @refreshedVariablesDataUpdated="handleVariablesDataChange"
+          @variablesManagerReady="onVariablesManagerReady"
         />
       </q-card-section>
     </q-card>
@@ -173,9 +172,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
   <!-- Dimension Selector Dialog -->
   <q-dialog v-model="showDimensionSelector">
     <q-card class="dimension-selector-dialog">
-      <q-card-section class="tw-p-4 tw-border-b">
-        <div class="tw-flex tw-items-center tw-justify-between tw-mb-3">
-          <div class="tw-text-base tw-font-semibold">{{ t('latencyInsights.selectDimensions') }}</div>
+      <q-card-section class="tw:p-4 tw:border-b">
+        <div class="tw:flex tw:items-center tw:justify-between tw:mb-3">
+          <div class="tw:text-base tw:font-semibold">{{ t('latencyInsights.selectDimensions') }}</div>
           <q-btn flat round dense icon="close" v-close-popup />
         </div>
 
@@ -186,7 +185,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           outlined
           :placeholder="t('search.searchField')"
           clearable
-          class="tw-w-full"
+          class="tw:w-full"
         >
           <template #prepend>
             <q-icon name="search" />
@@ -194,7 +193,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         </q-input>
       </q-card-section>
 
-      <q-card-section class="tw-p-0 dimension-list-container">
+      <q-card-section class="tw:p-0 dimension-list-container">
         <q-list v-if="filteredDimensions.length > 0">
           <q-item
             v-for="dimension in filteredDimensions"
@@ -218,7 +217,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         </q-list>
 
         <!-- No results message -->
-        <div v-else class="tw-p-4 tw-text-center tw-text-gray-500">
+        <div v-else class="tw:p-4 tw:text-center tw:text-gray-500">
           {{ t('search.noResult') }}
         </div>
       </q-card-section>
@@ -302,6 +301,10 @@ const { t } = useI18n();
 const { loading, error, analyzeAllDimensions } = useLatencyInsightsAnalysis();
 const { generateDashboard } = useLatencyInsightsDashboard();
 
+// Variables manager will be initialized by RenderDashboardCharts
+// and we'll receive a reference to it via the @variablesManagerReady event
+const variablesManager = ref(null);
+
 const isOpen = ref(true);
 const dashboardData = ref<any>(null);
 const dashboardChartsRef = ref<any>(null);
@@ -309,14 +312,25 @@ const showDimensionSelector = ref(false);
 const dashboardRenderKey = ref(0); // Only increment on full reload to avoid re-rendering on panel append
 const dimensionSearchText = ref('');
 
-// Percentile change tracking - default to P95
-const initialPercentile = ref<string | null>("0.95");
-const currentPercentile = ref<string | null>("0.95");
+// Percentile change tracking - use variables manager's hasUncommittedChanges
+// This matches the pattern used in ViewDashboard
 const showRefreshButton = computed(() => {
-  return activeAnalysisType.value === 'latency' &&
-         initialPercentile.value !== null &&
-         currentPercentile.value !== null &&
-         initialPercentile.value !== currentPercentile.value;
+  if (activeAnalysisType.value !== 'latency') {
+    return false;
+  }
+
+  // Use variables manager to check for uncommitted changes (same as ViewDashboard)
+  const manager = variablesManager.value;
+  // Use optional chaining for safer property access
+  if (manager?.hasUncommittedChanges !== undefined) {
+    // Access the value if it's a ref, otherwise use directly
+    const hasChanges = typeof manager.hasUncommittedChanges === 'object' && 'value' in manager.hasUncommittedChanges
+      ? manager.hasUncommittedChanges.value
+      : manager.hasUncommittedChanges;
+    return hasChanges;
+  }
+
+  return false;
 });
 
 // Detect custom SQL mode
@@ -473,7 +487,7 @@ const loadAnalysis = async () => {
       baseFilter: props.baseFilter,
       dimensions: selectedDimensions.value,
       analysisType: activeAnalysisType.value,
-      percentile: currentPercentile.value || undefined,
+      percentile: getCurrentPercentile() || undefined,
     };
 
     // OPTIMIZATION: Skip analyzeAllDimensions() to avoid 20 extra queries
@@ -501,28 +515,37 @@ const loadAnalysis = async () => {
   }
 };
 
-const handleVariablesDataChange = (variablesData: any) => {
-  if (activeAnalysisType.value !== 'latency') {
-    return;
-  }
+// Handler for when variables manager is ready from RenderDashboardCharts
+const onVariablesManagerReady = (manager: any) => {
+  variablesManager.value = manager;
 
-  // Extract percentile from the values array
-  const percentileVar = variablesData?.values?.find((v: any) => v.name === 'percentile');
-  const percentileValue = percentileVar?.value;
-
-
-  if (percentileValue !== undefined) {
-    // Set initial percentile on first load
-    if (initialPercentile.value === null) {
-      initialPercentile.value = percentileValue;
-    }
-    currentPercentile.value = percentileValue;
+  // Load analysis immediately when manager is ready to populate dashboard
+  // This ensures the dashboard shows data on initial load instead of remaining blank
+  if (activeAnalysisType.value === 'latency' && !dashboardData.value) {
+    loadAnalysis();
   }
 };
 
+// Helper to get current percentile from variables manager
+const getCurrentPercentile = (): string => {
+  const manager = variablesManager.value;
+  if (manager && manager.committedVariablesData) {
+    // committedVariablesData has structure: { global: [], tabs: {}, panels: {} }
+    // Percentile is likely a global variable
+    const percentileVar = manager.committedVariablesData.global?.find((v: any) => v.name === 'percentile');
+    if (percentileVar && percentileVar.value !== undefined) {
+      return percentileVar.value;
+    }
+  }
+  return "0.95"; // Default to P95
+};
+
 const refreshAfterPercentileChange = () => {
-  // Update initial percentile to current to hide refresh button
-  initialPercentile.value = currentPercentile.value;
+  // Commit all variable changes before reloading (same as ViewDashboard's refreshData)
+  if (dashboardChartsRef.value?.commitAllVariables) {
+    dashboardChartsRef.value.commitAllVariables();
+  }
+
   // Reload the analysis with new percentile
   loadAnalysis();
 };

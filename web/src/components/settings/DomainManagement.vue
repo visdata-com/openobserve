@@ -65,6 +65,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             unelevated
             @click="saveClaimParserFunction"
             :loading="savingClaimParser"
+            :disable="!hasClaimParserChanged"
           />
         </div>
         <div class="col-auto">
@@ -334,20 +335,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
       </div>
       </template>
     </div>
-    <div v-else class="text-h6 text-grey-6 q-mt-md q-mb-lg tw-w-full text-center q-pa-lg domain-card">
+    <div v-else class="text-h6 text-grey-6 q-mt-md q-mb-lg tw:w-full text-center q-pa-lg domain-card">
       {{ t("settings.noDomainMessage") }}
     </div>
 
     <!-- Action Buttons -->
-    <div class="flex justify-end q-px-lg q-py-lg full-width tw-absolute tw-bottom-0">
+    <div class="flex justify-end q-px-lg q-py-lg full-width tw:absolute tw:bottom-0">
       <q-btn
         :label="t('common.cancel')"
-        class="q-mr-md o2-secondary-button tw-h-[36px]"
+        class="q-mr-md o2-secondary-button tw:h-[36px]"
         @click="resetForm"
       />
       <q-btn
         :label="t('settings.saveChanges')"
-        class="o2-primary-button no-border tw-h-[36px] q-mr-md"
+        class="o2-primary-button no-border tw:h-[36px] q-mr-md"
         unelevated
         @click="saveChanges"
         :loading="saving"
@@ -357,7 +358,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onActivated, watch } from "vue";
+import { ref, reactive, onMounted, onActivated, watch, computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { useQuasar } from "quasar";
 import { useStore } from "vuex";
@@ -386,6 +387,7 @@ const saving = ref(false);
 
 // Claim parser function state
 const claimParserFunction = ref("");
+const originalClaimParserFunction = ref(""); // Track original value to detect changes
 const functionOptions = ref<string[]>([]);
 const allFunctions = ref<string[]>([]);
 const loadingFunctions = ref(false);
@@ -395,6 +397,11 @@ const recentErrors = ref<any[]>([]);
 const loadingErrors = ref(false);
 
 const emit = defineEmits(["cancel", "saved"]);
+
+// Computed property to check if claim parser function value has changed
+const hasClaimParserChanged = computed(() => {
+  return claimParserFunction.value !== originalClaimParserFunction.value;
+});
 
 onMounted(() => {
   if(store.state.zoConfig.meta_org == store.state.selectedOrganization.identifier) {
@@ -440,10 +447,9 @@ const loadDomainSettings = async () => {
     }
 
     // Load claim parser function from organization settings
-    const storedFunction = store.state?.organizationData?.organizationSettings?.claim_parser_function;
-    if (storedFunction) {
-      claimParserFunction.value = storedFunction;
-    }
+    const storedFunction = store.state?.organizationData?.organizationSettings?.claim_parser_function || "";
+    claimParserFunction.value = storedFunction;
+    originalClaimParserFunction.value = storedFunction; // Store original for change detection
   } catch (error: any) {
     // If the API doesn't exist yet or returns an error, use example data
     console.warn("Domain restrictions API not available, using example data:", error);
@@ -621,10 +627,9 @@ const loadFunctions = async () => {
     functionOptions.value = allFunctions.value;
 
     // Set the current value from store if it exists
-    const storedFunction = store.state?.organizationData?.organizationSettings?.claim_parser_function;
-    if (storedFunction) {
-      claimParserFunction.value = storedFunction;
-    }
+    const storedFunction = store.state?.organizationData?.organizationSettings?.claim_parser_function || "";
+    claimParserFunction.value = storedFunction;
+    originalClaimParserFunction.value = storedFunction; // Store original for change detection
   } catch (e: any) {
     console.error("Error loading functions:", e);
   } finally {
@@ -666,6 +671,9 @@ const saveClaimParserFunction = async () => {
       claim_parser_function: claimParserFunction.value || "",
     };
     store.dispatch("setOrganizationSettings", updatedSettings);
+
+    // Update original value after successful save
+    originalClaimParserFunction.value = claimParserFunction.value || "";
 
     q.notify({
       type: "positive",

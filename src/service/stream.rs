@@ -28,7 +28,7 @@ use config::{
             StreamStats, StreamType, TimeRange, UpdateStreamSettings,
         },
     },
-    utils::{flatten::format_label_name, json, time::now_micros},
+    utils::{flatten::format_label_name, json, time::now_micros, util::get_distinct_stream_name},
 };
 use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use hashbrown::{HashMap, HashSet};
@@ -482,6 +482,55 @@ pub async fn save_stream_settings(
         .await
         .unwrap();
 
+    // skip metadata, as we should never do distinct values stream for
+    // metadata streams
+    if matches!(stream_type, StreamType::Logs | StreamType::Traces)
+        && let Some(original_settings) = unwrap_stream_settings(&schema)
+    {
+        let existing = original_settings.data_retention;
+        let new = settings.data_retention;
+        if existing != new {
+            let distinct_stream = get_distinct_stream_name(stream_type, stream_name);
+
+            match infra::schema::get(org_id, &distinct_stream, StreamType::Metadata).await {
+                Ok(distinct_schema) => {
+                    let mut distinct_settings =
+                        unwrap_stream_settings(&distinct_schema).unwrap_or_default();
+                    distinct_settings.data_retention = new;
+
+                    let mut metadata = distinct_schema.metadata.clone();
+                    metadata.insert(
+                        "settings".to_string(),
+                        json::to_string(&distinct_settings).unwrap(),
+                    );
+                    if !metadata.contains_key("created_at") {
+                        metadata.insert("created_at".to_string(), now_micros().to_string());
+                    }
+
+                    if let Err(e) = db::schema::update_setting(
+                        org_id,
+                        &distinct_stream,
+                        StreamType::Metadata,
+                        metadata,
+                    )
+                    .await
+                    {
+                        log::warn!(
+                            "error in updating retention setting for distinct stream : {org_id}/{distinct_stream} : {e}"
+                        );
+                    }
+                }
+                Err(e) => {
+                    // We have already updated the main stream settings, and this is just for
+                    // retention, so no point in failing the api call if this fails.
+                    log::warn!(
+                        "error getting schema for distinct stream {org_id}/{distinct_stream} : {e}"
+                    );
+                }
+            }
+        }
+    }
+
     Ok(HttpResponse::Ok().json(MetaHttpResponse::message(http::StatusCode::OK, "")))
 }
 
@@ -844,6 +893,33 @@ pub async fn delete_stream(
         .await
         .unwrap();
     if schema.is_empty() {
+        // If stream schema doesn't exist, check if this is an enrichment table with a URL job
+        if stream_type == StreamType::EnrichmentTables
+            && let Ok(Some(_job)) = db::enrichment_table::get_url_job(org_id, stream_name).await
+        {
+            // URL job exists - delete it and return success
+            if let Err(e) = db::enrichment_table::delete_url_job(org_id, stream_name).await {
+                return Ok(
+                    HttpResponse::InternalServerError().json(MetaHttpResponse::error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("failed to delete URL job: {e}"),
+                    )),
+                );
+            }
+
+            log::info!(
+                "Deleted URL job for enrichment table: {}/{}",
+                org_id,
+                stream_name
+            );
+
+            return Ok(HttpResponse::Ok().json(MetaHttpResponse::message(
+                StatusCode::OK,
+                "URL job deleted successfully".to_string(),
+            )));
+        }
+
+        // No schema and no URL job - stream not found
         return Ok(HttpResponse::NotFound().json(MetaHttpResponse::error(
             StatusCode::NOT_FOUND,
             "stream not found",
@@ -1231,6 +1307,18 @@ fn validate_index_field_conflicts(
     }
 
     Ok(())
+}
+
+pub async fn get_stream_retention(
+    org_id: &str,
+    stream_type: StreamType,
+    stream: &str,
+) -> Option<i64> {
+    if let Some(s) = infra::schema::get_settings(org_id, stream, stream_type).await {
+        Some(s.data_retention)
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]

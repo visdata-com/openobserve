@@ -41,6 +41,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
               : { options: { backgroundColor: 'transparent' } }
           "
         />
+        <PromQLTableChart
+          v-else-if="
+            panelSchema.type == 'table' && panelSchema.queryType === 'promql'
+          "
+          :data="tableRendererData"
+          :config="panelSchema.config"
+          @row-click="onChartClick"
+        />
         <TableRenderer
           v-else-if="panelSchema.type == 'table'"
           :data="
@@ -62,7 +70,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             :htmlContent="panelSchema.htmlContent"
             style="width: 100%; height: 100%"
             class="col"
-            :variablesData="variablesData"
+            :variablesData="currentVariablesData || variablesData"
+            :tabId="tabId"
+            :panelId="panelSchema.id"
           />
         </div>
         <div
@@ -74,7 +84,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             :markdownContent="panelSchema.markdownContent"
             style="width: 100%; height: 100%"
             class="col"
-            :variablesData="variablesData"
+            :variablesData="currentVariablesData || variablesData"
+            :tabId="tabId"
+            :panelId="panelSchema.id"
           />
         </div>
 
@@ -107,6 +119,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           @error="errorDetail = $event"
           @click="onChartClick"
           @contextmenu="onChartContextMenu"
+          @domcontextmenu="onChartDomContextMenu"
         />
       </div>
       <div
@@ -158,10 +171,46 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         />
       </div>
       <div
-        v-if="allowAnnotationsAdd && isCursorOverPanel"
-        style="position: absolute; top: 0px; right: 0px; z-index: 9"
+        v-if="isCursorOverPanel"
+        class="flex items-center q-gutter-x-xs"
+        style="
+          position: absolute;
+          top: 0px;
+          right: 0px;
+          z-index: 9;
+          padding-right: 2px;
+          padding-top: 2px;
+        "
         @click.stop
       >
+        <q-btn
+          v-if="
+            showLegendsButton &&
+            noData !== 'No Data' &&
+            ![
+              'table',
+              'html',
+              'markdown',
+              'custom_chart',
+              'geomap',
+              'maps',
+              'heatmap',
+              'metric',
+              'gauge',
+            ].includes(panelSchema.type)
+          "
+          color="primary"
+          icon="format_list_bulleted"
+          round
+          outline
+          size="sm"
+          @click="$emit('show-legends')"
+          class="el-border"
+        >
+          <q-tooltip anchor="top middle" self="bottom right">
+            Show Legends
+          </q-tooltip>
+        </q-btn>
         <q-btn
           v-if="
             [
@@ -175,6 +224,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
               'h-stacked',
             ].includes(panelSchema.type) &&
             checkIfPanelIsTimeSeries === true &&
+            allowAnnotationsAdd &&
             !viewOnly
           "
           color="primary"
@@ -298,6 +348,7 @@ import {
 import { useStore } from "vuex";
 import { usePanelDataLoader } from "@/composables/dashboard/usePanelDataLoader";
 import { convertPanelData } from "@/utils/dashboard/convertPanelData";
+import useDashboardPanelData from "@/composables/useDashboardPanel";
 import {
   getAllDashboardsByFolderId,
   getDashboard,
@@ -309,11 +360,15 @@ import { generateDurationLabel } from "../../utils/date";
 import { onBeforeMount } from "vue";
 import { useLoading } from "@/composables/useLoading";
 import useNotifications from "@/composables/useNotifications";
-import { getUTCTimestampFromZonedTimestamp, validateSQLPanelFields } from "@/utils/dashboard/convertDataIntoUnitValue";
+import {
+  getUTCTimestampFromZonedTimestamp,
+  validateSQLPanelFields,
+} from "@/utils/dashboard/convertDataIntoUnitValue";
 import { useAnnotationsData } from "@/composables/dashboard/useAnnotationsData";
 import { event } from "quasar";
 import { exportFile } from "quasar";
 import LoadingProgress from "@/components/common/LoadingProgress.vue";
+import { throttle } from "lodash-es";
 
 const ChartRenderer = defineAsyncComponent(() => {
   return import("@/components/dashboards/panels/ChartRenderer.vue");
@@ -321,6 +376,10 @@ const ChartRenderer = defineAsyncComponent(() => {
 
 const TableRenderer = defineAsyncComponent(() => {
   return import("@/components/dashboards/panels/TableRenderer.vue");
+});
+
+const PromQLTableChart = defineAsyncComponent(() => {
+  return import("@/components/dashboards/panels/PromQLTableChart.vue");
 });
 
 const GeoMapRenderer = defineAsyncComponent(() => {
@@ -356,6 +415,7 @@ export default defineComponent({
     ChartRenderer,
     AlertContextMenu,
     TableRenderer,
+    PromQLTableChart,
     GeoMapRenderer,
     MapsRenderer,
     HTMLRenderer,
@@ -376,6 +436,11 @@ export default defineComponent({
     variablesData: {
       required: true,
       type: Object,
+    },
+    currentVariablesData: {
+      required: false,
+      type: Object,
+      default: null,
     },
     forceLoad: {
       type: Boolean,
@@ -449,6 +514,11 @@ export default defineComponent({
       required: false,
       default: false,
     },
+    showLegendsButton: {
+      type: Boolean,
+      required: false,
+      default: false,
+    },
   },
   emits: [
     "updated:data-zoom",
@@ -464,11 +534,54 @@ export default defineComponent({
     "is-partial-data-update",
     "series-data-update",
     "contextmenu",
+    "show-legends",
   ],
   setup(props, { emit }) {
     const store = useStore();
     const route = useRoute();
     const router = useRouter();
+
+    // ============================================================================
+    // Hidden Queries Feature Setup
+    // ============================================================================
+    // This feature allows temporarily hiding PromQL query results from charts
+    // on the Add Panel and Metrics pages. It's stored in layout (not config)
+    // so it's not persisted to the dashboard.
+    //
+    // IMPORTANT: PanelSchemaRenderer is used in multiple contexts:
+    // - AddPanel.vue (provides page key "addpanel") - needs hiding feature ✓
+    // - metrics/Index.vue (provides page key "metrics") - needs hiding feature ✓
+    // - ViewPanel.vue (provides page key "dashboard") - doesn't need it
+    // - VisualizeLogsQuery.vue (provides page key "logs") - doesn't need it
+    // - PreviewAlert.vue (no page key) - doesn't need it
+    // - PanelContainer.vue (no page key) - doesn't need it
+    // - PreviewPromqlQuery.vue (no page key) - doesn't need it
+    //
+    // To avoid breaking these other contexts, we:
+    // 1. Inject with null default to detect if page key was explicitly provided
+    // 2. Only call useDashboardPanelData if a page key exists
+    // 3. Return empty array [] if no hiddenQueries (no filtering applied)
+    // ============================================================================
+
+    const dashboardPanelDataPageKey: any = inject(
+      "dashboardPanelDataPageKey",
+      null // null default allows us to detect if key was provided
+    );
+
+    // Only access the composable if we're in a context that provides a page key
+    // This prevents creating unnecessary composable instances and accessing
+    // wrong panel data in contexts that don't need the hiding feature
+    let dashboardPanelDataForHiding: any = null;
+    if (dashboardPanelDataPageKey) {
+      const result = useDashboardPanelData(dashboardPanelDataPageKey);
+      dashboardPanelDataForHiding = result.dashboardPanelData;
+    }
+
+    // Returns array of hidden query indices (e.g., [0, 2] means queries 0 and 2 are hidden)
+    // Returns [] if no page key or no hiddenQueries - which means no filtering
+    const hiddenQueries = computed(() => {
+      return dashboardPanelDataForHiding?.layout?.hiddenQueries || [];
+    });
 
     // stores the converted data which can be directly used for rendering different types of panels
     const panelData: any = ref({}); // holds the data to render the panel after getting data from the api based on panel config
@@ -510,6 +623,7 @@ export default defineComponent({
       searchResponse,
       is_ui_histogram,
       shouldRefreshWithoutCache,
+      showLegendsButton,
     } = toRefs(props);
     // calls the apis to get the data based on the panel config
     let {
@@ -561,6 +675,36 @@ export default defineComponent({
       folderId.value,
     );
 
+    // Filter data based on hiddenQueries for PromQL panels
+    const filteredData = computed(() => {
+      // If no data, return as is
+      if (!data.value) {
+        return data.value;
+      }
+
+      // Only filter for PromQL queries
+      if (panelSchema.value.queryType !== "promql") {
+        return data.value;
+      }
+
+      // If no hidden queries or empty array, return as is
+      if (
+        !hiddenQueries.value ||
+        hiddenQueries.value.length === 0 ||
+        !Array.isArray(data.value)
+      ) {
+        return data.value;
+      }
+
+      // Filter out hidden queries
+      const filtered = data.value.filter(
+        (_: any, index: number) => !hiddenQueries.value.includes(index),
+      );
+
+      // Return filtered data
+      return filtered;
+    });
+
     // need tableRendererRef to access downloadTableAsCSV method
     const tableRendererRef: any = ref(null);
 
@@ -571,13 +715,16 @@ export default defineComponent({
     const contextMenuData = ref<any>(null);
 
     const onChartContextMenu = (event: any) => {
-      // Only show context menu if alert creation is allowed
+      // Emit contextmenu event for general usage (drilldowns, annotations, etc.)
       emit("contextmenu", {
         ...event,
         panelTitle: panelSchema.value.title,
         panelId: panelSchema.value.id,
       });
+    };
 
+    const onChartDomContextMenu = (event: any) => {
+      // Handle DOM contextmenu event specifically for alert creation
       if (!allowAlertCreation.value) {
         return;
       }
@@ -601,7 +748,6 @@ export default defineComponent({
       // Prepare panel data to pass to alert creation
       const query = panelSchema.value.queries?.[0];
       if (!query) {
-        console.error("No query found in panel");
         return;
       }
 
@@ -812,7 +958,7 @@ export default defineComponent({
         try {
           panelData.value = await convertPanelData(
             panelSchema.value,
-            data.value,
+            filteredData.value,
             store,
             chartPanelRef,
             hoveredSeriesState,
@@ -831,7 +977,6 @@ export default defineComponent({
             code: "",
           };
         } catch (error: any) {
-          console.error("error", error);
           errorDetail.value = {
             message: error?.message,
             code: error?.code || "",
@@ -856,11 +1001,31 @@ export default defineComponent({
       }
     };
 
+    // Track if we've rendered the first chunk with actual data
+    let hasRenderedFirstDataChunk = ref(false);
+
+    // Create a throttled version for streaming updates (350ms throttle)
+    // Chunks arrive ~300-400ms apart, so 350ms ensures updates every 2-3 chunks
+    // This prevents excessive re-renders while showing progressive updates
+    const convertPanelDataThrottled = throttle(convertPanelDataCommon, 350, {
+      leading: true,  // Call immediately on first invocation
+      trailing: true  // Ensure final call after throttle period
+    });
+
     // Watch for panel schema changes to re-convert panel data
     watch(
       panelSchema,
       async () => {
         // Re-convert panel data when schema changes (for non-whitelisted config changes)
+        // Skip if queries length changed - let data watcher handle it after reload
+        const currentQueriesCount = panelSchema.value?.queries?.length || 0;
+        const dataArrayCount = data.value?.length || 0;
+
+        // Skip conversion if query count doesn't match data count - data is stale
+        if (currentQueriesCount !== dataArrayCount) {
+          return;
+        }
+
         if (
           !errorDetail?.value?.message &&
           validatePanelData?.value?.length === 0 &&
@@ -872,8 +1037,25 @@ export default defineComponent({
       { deep: true },
     );
 
+    // Watch for hiddenQueries changes to re-render the chart
     watch(
-      [data, store?.state, annotations],
+      hiddenQueries,
+      async () => {
+        // Only re-convert panel data if we're in promql mode
+        if (panelSchema.value.queryType === "promql" && data.value) {
+          await convertPanelDataCommon();
+        }
+      },
+      { deep: true },
+    );
+
+    watch(
+      [
+        data,
+        () => store?.state?.theme,
+        () => store?.state?.timezone,
+        annotations
+      ],
       async () => {
         // emit vrl function field list
         if (data.value?.length && data.value[0] && data.value[0].length) {
@@ -904,8 +1086,28 @@ export default defineComponent({
             code: "",
           };
 
-        // Use the common function to convert panel data
-        await convertPanelDataCommon();
+        // Check if this is the first chunk with actual data
+        const hasData = data.value?.length > 0 &&
+                       data.value[0]?.result?.length > 0;
+
+        // Use throttled version during loading (streaming), immediate version when complete
+        // This prevents excessive re-renders during PromQL data streaming
+        if (loading.value) {
+          // First chunk with actual data: render immediately!
+          if (hasData && !hasRenderedFirstDataChunk.value) {
+            hasRenderedFirstDataChunk.value = true;
+            await convertPanelDataCommon();
+          } else {
+            // Subsequent chunks: throttle to reduce re-render frequency
+            await convertPanelDataThrottled();
+          }
+        } else {
+          // Loading complete: immediate final render with full data
+          // Cancel any pending throttled calls and render immediately
+          convertPanelDataThrottled.cancel();
+          hasRenderedFirstDataChunk.value = false; // Reset for next query
+          await convertPanelDataCommon();
+        }
       },
       { deep: true },
     );
@@ -933,11 +1135,23 @@ export default defineComponent({
 
     // ResizeObserver to detect chartPanelRef dimension changes
     let resizeObserver: ResizeObserver | null = null;
+    let resizeTimeout: ReturnType<typeof setTimeout> | null = null;
 
     onMounted(() => {
       if (chartPanelRef.value) {
         resizeObserver = new ResizeObserver(() => {
-          handleWindowLayoutChanges();
+          // Debounce the resize handler to prevent "ResizeObserver loop" errors
+          // This error occurs when the callback takes longer than one animation frame
+          if (resizeTimeout) {
+            clearTimeout(resizeTimeout);
+          }
+
+          resizeTimeout = window.setTimeout(() => {
+            // Use requestAnimationFrame to ensure DOM updates happen at the right time
+            requestAnimationFrame(() => {
+              handleWindowLayoutChanges();
+            });
+          }, 100); // 100ms debounce delay
         });
 
         resizeObserver.observe(chartPanelRef.value);
@@ -948,6 +1162,10 @@ export default defineComponent({
       if (resizeObserver) {
         resizeObserver.disconnect();
         resizeObserver = null;
+      }
+      if (resizeTimeout) {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = null;
       }
     });
 
@@ -1089,9 +1307,9 @@ export default defineComponent({
       }
       // Check if the queryType is 'promql'
       else if (panelSchema.value?.queryType == "promql") {
-        // Check if the 'data' array has elements and every item has a non-empty 'result' array
-        return data.value?.length &&
-          data.value.some((item: any) => item?.result?.length)
+        // Check if the 'filteredData' array has elements and every item has a non-empty 'result' array
+        return filteredData.value?.length &&
+          filteredData.value.some((item: any) => item?.result?.length)
           ? "" // Return an empty string if there is data
           : "No Data"; // Return "No Data" if there is no data
       } else {
@@ -1335,7 +1553,6 @@ export default defineComponent({
       const streamName = queryDetails?.queries[0]?.fields?.stream;
 
       if (!originalQuery || !streamName) {
-        console.error("Missing query or stream name.");
         return null;
       }
 
@@ -1363,7 +1580,6 @@ export default defineComponent({
       try {
         return parser.astify(originalQuery);
       } catch (error) {
-        console.error("Failed to parse query:", error);
         return null;
       }
     };
@@ -1523,7 +1739,6 @@ export default defineComponent({
         const navigateToLogs = async () => {
           const queryDetails = panelSchema.value;
           if (!queryDetails) {
-            console.error("Panel schema is undefined.");
             return;
           }
 
@@ -1547,7 +1762,10 @@ export default defineComponent({
 
           let modifiedQuery = originalQuery;
 
-          if (drilldownData.data.logsMode === "auto") {
+          // Check if this is a PromQL query - if so, skip auto mode SQL parsing
+          const isPromQLQuery = panelSchema.value.queryType === "promql";
+
+          if (drilldownData.data.logsMode === "auto" && !isPromQLQuery) {
             if (!parser) {
               await importSqlParser();
             }
@@ -1582,6 +1800,10 @@ export default defineComponent({
             );
 
             modifiedQuery = `SELECT * FROM "${streamName}"${aliasClause} ${whereClause}`;
+          } else if (drilldownData.data.logsMode === "auto" && isPromQLQuery) {
+            // For PromQL queries in auto mode, create a simple SELECT * query
+            // since we can't parse PromQL syntax with SQL parser
+            modifiedQuery = `SELECT * FROM "${streamName}"`;
           } else {
             // Create drilldown variables object exactly as you do for other drilldown types
             const drilldownVariables: any = {};
@@ -1714,7 +1936,6 @@ export default defineComponent({
               });
             }
           } catch (error) {
-            console.error("Failed to navigate to logs:", error);
           }
         };
 
@@ -1843,7 +2064,6 @@ export default defineComponent({
           )?.folderId;
 
           if (!folderId) {
-            console.error(`Folder "${drilldownData.data.folder}" not found`);
             return;
           }
 
@@ -1865,9 +2085,6 @@ export default defineComponent({
           );
 
           if (!dashboardData) {
-            console.error(
-              `Dashboard "${drilldownData.data.dashboard}" not found in folder "${drilldownData.data.folder}"`,
-            );
             return;
           }
 
@@ -2009,7 +2226,8 @@ export default defineComponent({
             const flattenedData: any[] = [];
 
             // Iterate through each response item (multiple queries can produce multiple responses)
-            data?.value?.forEach((promData: any, queryIndex: number) => {
+            // Use filteredData to exclude hidden queries
+            filteredData?.value?.forEach((promData: any, queryIndex: number) => {
               if (!promData?.result || !Array.isArray(promData.result)) return;
 
               // Iterate through each result (time series)
@@ -2113,7 +2331,6 @@ export default defineComponent({
             showErrorNotification("Browser denied file download...");
           }
         } catch (error) {
-          console.error("Error downloading CSV:", error);
           showErrorNotification("Failed to download data as CSV");
         }
       }
@@ -2144,7 +2361,11 @@ export default defineComponent({
           tableRendererRef?.value?.downloadTableAsJSON(title);
         } else {
           // Handle non-table charts
-          const chartData = data.value;
+          // Use filteredData for PromQL to exclude hidden queries, otherwise use data
+          const chartData =
+            panelSchema.value.queryType === "promql"
+              ? filteredData.value
+              : data.value;
 
           if (!chartData || !chartData.length) {
             showErrorNotification("No data available to download");
@@ -2169,7 +2390,6 @@ export default defineComponent({
           }
         }
       } catch (error) {
-        console.error("Error downloading JSON:", error);
         showErrorNotification("Failed to download data as JSON");
       }
     };
@@ -2177,6 +2397,26 @@ export default defineComponent({
     // Watch isPartialData changes and emit them
     watch(isPartialData, (newValue) => {
       emit("is-partial-data-update", newValue);
+    });
+
+    // Computed property for table data with logging
+    const tableRendererData = computed(() => {
+      if (panelSchema.value.type === "table") {
+        let tableData;
+
+        if (panelSchema.value.queryType === "promql") {
+          // For PromQL tables, the data is in panelData.options (same as pie/donut)
+          // The TableConverter returns {columns, rows, ...} which gets placed in options
+          tableData = panelData.value?.options || { rows: [], columns: [] };
+        } else if (panelData.value?.chartType == "table") {
+          tableData = panelData.value;
+        } else {
+          tableData = { options: { backgroundColor: "transparent" } };
+        }
+
+        return tableData;
+      }
+      return { options: { backgroundColor: "transparent" } };
     });
 
     return {
@@ -2190,6 +2430,7 @@ export default defineComponent({
       noData,
       metadata,
       tableRendererRef,
+      tableRendererData,
       onChartClick,
       onDataZoom,
       drilldownArray,
@@ -2217,7 +2458,9 @@ export default defineComponent({
       contextMenuVisible,
       contextMenuPosition,
       contextMenuValue,
+      contextMenuData,
       onChartContextMenu,
+      onChartDomContextMenu,
       hideContextMenu,
       handleCreateAlert,
     };

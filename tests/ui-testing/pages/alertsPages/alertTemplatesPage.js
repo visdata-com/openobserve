@@ -39,6 +39,11 @@ export class AlertTemplatesPage {
         this.importFileInput = '[data-test="template-import-json-file-input"]';
         this.templateImportSuccessMessage = 'Successfully imported';
         this.templateImportErrorText = 'Template - 1: "email template" creation failed --> Reason: Template name cannot contain \':\', \'#\', \'?\', \'&\', \'%\', \'/\', quotes and space characters';
+
+        // Inline locators moved from methods
+        this.monacoEditorLocator = '.monaco-editor';
+        this.tableLocator = 'table';
+        this.preLocator = 'pre';
     }
 
     async navigateToTemplates(retryCount = 0) {
@@ -90,7 +95,7 @@ export class AlertTemplatesPage {
   "text": "{alert_name} is active. This is the alert url {alert_url}. This alert template has been created using a playwright automation script"`;
         
         // Clear the template editor first
-        await this.page.locator(".monaco-editor").first().click();
+        await this.page.locator(this.monacoEditorLocator).first().click();
         await this.page.keyboard.press('Control+A');
         await this.page.keyboard.press('Backspace');
         await this.page.waitForTimeout(1000);
@@ -100,8 +105,7 @@ export class AlertTemplatesPage {
         await this.page.waitForTimeout(1000);
         
         await this.page.locator(this.templateSubmitButton).click();
-        // await expect(this.page.getByText(this.templateSuccessMessage)).toBeVisible({ timeout: 30000 });
-        
+
         // Additional wait for WebKit to process the update
         await this.page.waitForTimeout(3000);
         
@@ -117,8 +121,8 @@ export class AlertTemplatesPage {
         while (attempts < maxAttempts) {
             try {
                 // First ensure the table is visible
-                await this.page.locator('table').waitFor({ state: 'visible', timeout: 10000 });
-                
+                await this.page.locator(this.tableLocator).waitFor({ state: 'visible', timeout: 10000 });
+
                 // Use search to find the template
                 await this.page.getByPlaceholder(this.templateSearchInput).click();
                 await this.page.getByPlaceholder(this.templateSearchInput).fill(templateName);
@@ -153,7 +157,7 @@ export class AlertTemplatesPage {
         // Wait for either search results or no data message
         try {
             await Promise.race([
-                this.page.locator('table').waitFor({ state: 'visible', timeout: 30000 }),
+                this.page.locator(this.tableLocator).waitFor({ state: 'visible', timeout: 30000 }),
                 this.page.getByText('No data available').waitFor({ state: 'visible', timeout: 30000 })
             ]);
         } catch (error) {
@@ -186,14 +190,85 @@ export class AlertTemplatesPage {
         await this.page.waitForTimeout(2000);
 
         try {
-            // Try to find the template directly first
-            await this.page.getByRole('cell', { name: templateName }).waitFor({ timeout: 2000 });
+            // Use search to find the template (handles pagination)
+            await this.page.getByPlaceholder(this.templateSearchInput).click();
+            await this.page.getByPlaceholder(this.templateSearchInput).fill('');
+            await this.page.getByPlaceholder(this.templateSearchInput).fill(templateName);
+            await this.page.waitForTimeout(1000);
+
+            // Try to find the template in search results
+            await this.page.getByRole('cell', { name: templateName }).waitFor({ timeout: 3000 });
             testLogger.info('Found existing template', { templateName });
             return templateName;
         } catch (error) {
             // If not found, create new template
             await this.createTemplate(templateName);
             testLogger.info('Created new template', { templateName });
+            return templateName;
+        }
+    }
+
+    /**
+     * Create a validation template with JSON array format for ingestion API
+     * This template is specifically designed for alert trigger validation
+     * @param {string} templateName - Name of the template to create
+     */
+    async createValidationTemplate(templateName) {
+        await this.navigateToTemplates();
+        await this.page.waitForTimeout(2000);
+
+        await this.page.locator(this.addTemplateButton).click();
+        await this.page.waitForTimeout(1000);
+
+        await this.page.locator(this.templateNameInput).click();
+        await this.page.locator(this.templateNameInput).fill(templateName);
+        await this.page.waitForTimeout(1000);
+
+        // JSON array format required for OpenObserve ingestion API
+        const templateText = `[{"alert_name": "{alert_name}", "alert_type": "validation", "org_name": "{org_name}", "stream_name": "{stream_name}"}]`;
+
+        // Clear the template editor first
+        await this.page.locator(this.monacoEditorLocator).first().click();
+        await this.page.keyboard.press('Control+A');
+        await this.page.keyboard.press('Backspace');
+        await this.page.waitForTimeout(1000);
+
+        // Enter the template content
+        await this.page.keyboard.type(templateText);
+        await this.page.waitForTimeout(1000);
+
+        await this.page.locator(this.templateSubmitButton).click();
+
+        // Wait for success message like regular createTemplate
+        await expect(this.page.getByText(this.templateSuccessMessage)).toBeVisible({ timeout: 10000 });
+        await this.page.waitForTimeout(2000);
+
+        testLogger.info('Created validation template with JSON array format', { templateName });
+        return templateName;
+    }
+
+    /**
+     * Ensure validation template exists (creates with JSON array format if not found)
+     * @param {string} templateName - Name of the template
+     */
+    async ensureValidationTemplateExists(templateName) {
+        await this.navigateToTemplates();
+        await this.page.waitForTimeout(2000);
+
+        try {
+            // Use search to find the template
+            await this.page.getByPlaceholder(this.templateSearchInput).click();
+            await this.page.getByPlaceholder(this.templateSearchInput).fill('');
+            await this.page.getByPlaceholder(this.templateSearchInput).fill(templateName);
+            await this.page.waitForTimeout(1000);
+
+            await this.page.getByRole('cell', { name: templateName }).waitFor({ timeout: 3000 });
+            testLogger.info('Found existing validation template', { templateName });
+            return templateName;
+        } catch (error) {
+            // Create validation template with proper JSON format
+            await this.createValidationTemplate(templateName);
+            testLogger.info('Created new validation template', { templateName });
             return templateName;
         }
     }
@@ -217,7 +292,7 @@ export class AlertTemplatesPage {
             // Wait for either search results or no data message
             try {
                 await Promise.race([
-                    this.page.locator('table').waitFor({ state: 'visible', timeout: 30000 }),
+                    this.page.locator(this.tableLocator).waitFor({ state: 'visible', timeout: 30000 }),
                     this.page.getByText('No data available').waitFor({ state: 'visible', timeout: 30000 })
                 ]);
             } catch (error) {
@@ -255,7 +330,7 @@ export class AlertTemplatesPage {
         await this.page.locator(this.importJsonButton).click();
         
         if (importType === 'invalid') {
-            await expect(this.page.locator('pre')).toContainText(this.templateImportErrorText);
+            await expect(this.page.locator(this.preLocator)).toContainText(this.templateImportErrorText);
         } else {
             await expect(this.page.getByText(this.templateImportSuccessMessage)).toBeVisible();
         }
@@ -287,7 +362,7 @@ export class AlertTemplatesPage {
         await this.page.locator(this.importJsonButton).click();
 
         if (importType === 'invalid') {
-            await expect(this.page.locator('pre')).toContainText(this.templateImportErrorText);
+            await expect(this.page.locator(this.preLocator)).toContainText(this.templateImportErrorText);
         } else {
             await expect(this.page.getByText(this.templateImportSuccessMessage)).toBeVisible();
         }

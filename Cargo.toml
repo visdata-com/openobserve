@@ -17,7 +17,7 @@ keywords = [
 license = "AGPL-3.0"
 name = "openobserve"
 repository = "https://github.com/openobserve/openobserve/"
-version = "0.17.0"
+version = "0.50.0"
 publish = false
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -25,6 +25,7 @@ publish = false
 default = []
 enterprise = []
 cloud = []
+visdata = ["dep:visdata"]
 mimalloc = ["dep:mimalloc"]
 jemalloc = ["dep:tikv-jemallocator"]
 profiling = ["dep:pprof"]
@@ -65,7 +66,7 @@ argon2.workspace = true
 async-trait.workspace = true
 async-recursion.workspace = true
 async-walkdir.workspace = true
-awc = { version = "3.5", features = ["rustls-0_23"] }
+awc = { version = "3.8", features = ["rustls-0_23"] }
 aws-sdk-sns.workspace = true
 base64.workspace = true
 bitflags = "2.9"
@@ -129,6 +130,7 @@ rayon.workspace = true
 regex.workspace = true
 regex-syntax.workspace = true
 reqwest.workspace = true
+rquickjs.workspace = true
 rust-embed-for-web = "11.2.1"
 rustls.workspace = true
 rustls-pemfile.workspace = true
@@ -140,6 +142,7 @@ sha256.workspace = true
 snafu.workspace = true
 snap.workspace = true
 sqlparser.workspace = true
+sqlx.workspace = true
 strum.workspace = true
 svix-ksuid.workspace = true
 thiserror.workspace = true
@@ -191,6 +194,7 @@ tokio-rustls.workspace = true
 roaring.workspace = true
 flight.workspace = true
 async-stream.workspace = true
+visdata = { workspace = true, optional = true }
 
 [dev-dependencies]
 async-walkdir.workspace = true
@@ -330,8 +334,12 @@ regex-syntax = "0.8"
 reqwest = { version = "0.12", default-features = false, features = [
     "rustls-tls-native-roots",
     "stream",
+    "gzip",
+    "brotli",
+    "deflate",
 ] }
 roaring = "0.11.2"
+rquickjs = { version = "0.11.0", features = ["array-buffer", "classes"] }
 rustls-pemfile = "2"
 rustls = { version = "0.23.20", default-features = false, features = [
     "std",
@@ -397,3 +405,5 @@ vector-enrichment = { version = "0.1.0", package = "enrichment", git = "https://
 vrl = { version = "0.28.1", features = ["arbitrary", "value", "compiler", "test"] }
 zip = "6.0.0"
 zstd = "0.13"
+#visdata = { path = "../o2_visdata" }
+visdata = { git = "https://github.com/visdata-com/o2_visdata.git", branch = "main", package = "visdata" }

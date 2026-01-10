@@ -15,7 +15,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 -->
 
 <template>
-  <div class="card-container tw-w-[100vw] tw-h-[100vh]">
+  <div class="card-container tw:w-[100vw] tw:h-[100vh]">
     <div style="max-width: 400px; padding-top: 100px" class="q-mx-auto q-pa-md">
       <div
         class="flex justify-center text-center"
@@ -57,8 +57,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           "
           :src="
             store.state.theme == 'dark'
-              ? getImageURL('images/common/openobserve_latest_dark_2.svg')
-              : getImageURL('images/common/openobserve_latest_light_2.svg')
+              ? getImageURL('images/common/mvs_logo_dark.png')
+              : getImageURL('images/common/mvs_logo_light.png')
           "
         />
       </div>
@@ -73,8 +73,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           "
           :src="
             store.state.theme == 'dark'
-              ? getImageURL('images/common/openobserve_latest_dark_2.svg')
-              : getImageURL('images/common/openobserve_latest_light_2.svg')
+              ? getImageURL('images/common/mvs_logo_dark.png')
+              : getImageURL('images/common/mvs_logo_light.png')
           "
         />
       </div>
@@ -82,7 +82,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
       <div v-if="autoRedirectDexLogin">
         <p>
           Redirecting to SSO login page. If you are not redirected, please
-          <a href="#" @click="loginWithSSo" class="cursor-pointer tw-underline">click here</a>.
+          <a href="#" @click="loginWithSSo" class="cursor-pointer tw:underline">click here</a>.
         </p>
       </div>
 

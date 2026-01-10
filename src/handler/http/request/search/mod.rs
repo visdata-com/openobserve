@@ -29,7 +29,7 @@ use config::{
         sql::resolve_stream_names,
         stream::StreamType,
     },
-    utils::{base64, json, time::now_micros},
+    utils::{base64, json, time::now_micros, util::DISTINCT_STREAM_PREFIX},
 };
 use error_utils::map_error_to_http_response;
 use hashbrown::HashMap;
@@ -60,7 +60,6 @@ use crate::{
     handler::http::extractors::Headers,
     service::{
         db::enrichment_table,
-        metadata::distinct_values::DISTINCT_STREAM_PREFIX,
         search::{
             self as SearchService, datafusion::plan::projections::get_result_schema,
             sql::visitor::pickup_where::pickup_where, utils::is_permissable_function_error,
@@ -174,6 +173,7 @@ async fn can_use_distinct_stream(
         ("org_id" = String, Path, description = "Organization name"),
         ("is_ui_histogram" = bool, Query, description = "Whether to return histogram data for UI"),
         ("is_multi_stream_search" = bool, Query, description = "Indicate is search is for multi stream"),
+        ("validate" = bool, Query, description = "Validate query fields against stream schema and User-Defined Schema (UDS). When enabled, returns error if queried fields are not in schema or not allowed by UDS"),
     ),
     request_body(content = inline(Request), description = "Search query", content_type = "application/json", example = json!({
         "query": {
@@ -214,7 +214,8 @@ async fn can_use_distinct_stream(
         (status = 500, description = "Failure", content_type = "application/json", body = ()),
     ),
     extensions(
-        ("x-o2-ratelimit" = json!({"module": "Search", "operation": "get"}))
+        ("x-o2-ratelimit" = json!({"module": "Search", "operation": "get"})),
+        ("x-o2-mcp" = json!({"description": "Search data with SQL query, you can use `match_all('something')` to search with full text search, also you can use `str_match(field, 'something')` to search in a specific field"}))
     )
 )]
 #[post("/{org_id}/_search")]
@@ -262,6 +263,7 @@ pub async fn search(
     let stream_type = get_stream_type_from_request(&query).unwrap_or_default();
     let is_ui_histogram = get_is_ui_histogram_from_request(&query);
     let is_multi_stream_search = get_is_multi_stream_search_from_request(&query);
+    let validate_query = utils::get_bool_from_request(&query.0, "validate");
 
     let dashboard_info = get_dashboard_info_from_request(&query);
 
@@ -356,6 +358,15 @@ pub async fn search(
                     "Query duration is modified due to query range restriction of {max_query_range} hours"
                 );
             }
+        }
+
+        // Validate query fields if requested
+        if validate_query
+            && let Err(e) =
+                utils::validate_query_fields(&org_id, &stream_name, stream_type, &req.query.sql)
+                    .await
+        {
+            return Ok(map_error_to_http_response(&e, Some(trace_id)));
         }
 
         // Check permissions on stream
@@ -523,7 +534,8 @@ pub async fn search(
         (status = 500, description = "Failure", content_type = "application/json", body = ()),
     ),
     extensions(
-        ("x-o2-ratelimit" = json!({"module": "Search", "operation": "get"}))
+        ("x-o2-ratelimit" = json!({"module": "Search", "operation": "get"})),
+        ("x-o2-mcp" = json!({"description": "Search logs around a timestamp"}))
     )
 )]
 #[get("/{org_id}/{stream_name}/_around")]
@@ -646,7 +658,8 @@ pub async fn around_v1(
         (status = 500, description = "Failure", content_type = "application/json", body = ()),
     ),
     extensions(
-        ("x-o2-ratelimit" = json!({"module": "Search", "operation": "get"}))
+        ("x-o2-ratelimit" = json!({"module": "Search", "operation": "get"})),
+        ("x-o2-mcp" = json!({"enabled": false}))
     )
 )]
 #[post("/{org_id}/{stream_name}/_around")]
@@ -752,7 +765,8 @@ pub async fn around_v2(
         (status = 500, description = "Failure", content_type = "application/json", body = ()),
     ),
     extensions(
-        ("x-o2-ratelimit" = json!({"module": "Search", "operation": "get"}))
+        ("x-o2-ratelimit" = json!({"module": "Search", "operation": "get"})),
+        ("x-o2-mcp" = json!({"description": "Get distinct values for a field"}))
     )
 )]
 #[get("/{org_id}/{stream_name}/_values")]
@@ -1204,9 +1218,6 @@ async fn values_v1(
 
     req.use_cache = get_use_cache_from_request(query);
 
-    // Get the size from query parameter for limiting results
-    let size = req.query.size;
-
     // skip fields which aren't part of the schema
     let schema = infra::schema::get(org_id, stream_name, stream_type)
         .await
@@ -1252,11 +1263,11 @@ async fn values_v1(
 
         let sql = if no_count {
             format!(
-                "SELECT \"{field}\" AS zo_sql_key FROM \"{distinct_prefix}{stream_name}\" {sql_where} GROUP BY zo_sql_key ORDER BY zo_sql_key ASC limit {size}"
+                "SELECT \"{field}\" AS zo_sql_key FROM \"{distinct_prefix}{stream_name}\" {sql_where} GROUP BY zo_sql_key ORDER BY zo_sql_key ASC"
             )
         } else {
             format!(
-                "SELECT \"{field}\" AS zo_sql_key, {count_fn} AS zo_sql_num FROM \"{distinct_prefix}{stream_name}\" {sql_where} GROUP BY zo_sql_key ORDER BY zo_sql_num DESC limit {size}"
+                "SELECT \"{field}\" AS zo_sql_key, {count_fn} AS zo_sql_num FROM \"{distinct_prefix}{stream_name}\" {sql_where} GROUP BY zo_sql_key ORDER BY zo_sql_num DESC, zo_sql_key ASC"
             )
         };
         let mut req = req.clone();
@@ -1299,6 +1310,7 @@ async fn values_v1(
     let mut hit_values: Vec<json::Value> = Vec::new();
     let mut work_group_set = Vec::with_capacity(query_results.len());
 
+    let size = req.query.size;
     for (key, ret) in query_results {
         let mut top_hits: Vec<(String, i64)> = Vec::with_capacity(size as usize);
         for row in ret.hits {
@@ -1418,7 +1430,8 @@ async fn values_v1(
         (status = 500, description = "Failure", content_type = "application/json", body = ()),
     ),
     extensions(
-        ("x-o2-ratelimit" = json!({"module": "Search", "operation": "get"}))
+        ("x-o2-ratelimit" = json!({"module": "Search", "operation": "get"})),
+        ("x-o2-mcp" = json!({"description": "Get search partitions then you can call _search api by partitions to give the result looks faster"}))
     )
 )]
 #[post("/{org_id}/_search_partition")]
@@ -1604,7 +1617,8 @@ pub async fn search_partition(
         (status = 500, description = "Internal Server Error", content_type = "application/json", body = ()),
     ),
     extensions(
-        ("x-o2-ratelimit" = json!({"module": "Search", "operation": "get"}))
+        ("x-o2-ratelimit" = json!({"module": "Search", "operation": "get"})),
+        ("x-o2-mcp" = json!({"description": "Get search history"}))
     )
 )]
 #[post("/{org_id}/_search_history")]

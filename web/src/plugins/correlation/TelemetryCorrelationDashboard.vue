@@ -28,20 +28,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
   >
     <q-card class="correlation-dashboard-card">
       <!-- Header -->
-      <q-card-section v-if="!isEmbeddedTabs" class="correlation-header tw-flex tw-items-center tw-justify-between tw-py-3 tw-px-4 tw-border-b tw-border-solid tw-border-[var(--o2-border-color)]">
-        <div class="tw-flex tw-items-center tw-gap-3">
+      <q-card-section v-if="!isEmbeddedTabs" class="correlation-header tw:flex tw:items-center tw:justify-between tw:py-3 tw:px-4 tw:border-b tw:border-solid tw:border-[var(--o2-border-color)]">
+        <div class="tw:flex tw:items-center tw:gap-3">
           <q-icon name="link" size="md" color="primary" />
-          <div class="tw-flex tw-flex-col tw-gap-0">
-            <span class="tw-text-lg tw-font-semibold">
+          <div class="tw:flex tw:flex-col tw:gap-0">
+            <span class="tw:text-lg tw:font-semibold">
               Correlated Streams - {{ serviceName }}
             </span>
-            <span class="tw-text-xs tw-opacity-70">
+            <span class="tw:text-xs tw:opacity-70">
               {{ formatTimeRange(timeRange) }}
             </span>
           </div>
         </div>
 
-        <div class="tw-flex tw-items-center tw-gap-3">
+        <div class="tw:flex tw:items-center tw:gap-3">
           <q-btn
             flat
             round
@@ -54,20 +54,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
       </q-card-section>
 
       <!-- Dimensions Display - Stable (matched) and Unstable (additional) -->
-      <div class="tw-py-2 tw-px-4 tw-border-b tw-border-solid tw-border-[var(--o2-border-color)]">
-        <div class="tw-flex tw-items-center tw-gap-3 tw-flex-wrap">
-          <span class="tw-text-xs tw-font-semibold tw-opacity-70">
+      <div class="tw:py-2 tw:px-4 tw:border-b tw:border-solid tw:border-[var(--o2-border-color)]">
+        <div class="tw:flex tw:items-center tw:gap-3 tw:flex-wrap">
+          <span class="tw:text-xs tw:font-semibold tw:opacity-70">
             {{ t('correlation.filters') }}:
           </span>
           <div
             v-for="(value, key) in pendingDimensions"
             :key="key"
-            class="tw-flex tw-items-center tw-gap-2"
-            :class="{ 'tw-opacity-60': unstableDimensionKeys.has(key) }"
+            class="tw:flex tw:items-center tw:gap-2"
           >
             <span
-              class="tw-text-xs tw-font-semibold"
-              :class="unstableDimensionKeys.has(key) ? 'tw-text-gray-500' : ''"
+              class="tw:text-xs tw:font-semibold"
+              :class="unstableDimensionKeys.has(key) ? 'tw:opacity-60' : 'tw:opacity-100'"
             >
               {{ key }}:
             </span>
@@ -89,14 +88,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           </div>
           <!-- Apply Button -->
           <q-btn
+            flat
             dense
             no-caps
-            color="primary"
+            text-color="light-text"
             :label="t('common.apply')"
             :disable="!hasPendingChanges"
             @click="applyDimensionChanges"
-            class="tw-ml-2"
-            size="sm"
+            class="o2-secondary-button tw:ml-2"
             data-test="apply-dimension-filters"
           />
         </div>
@@ -107,7 +106,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         v-if="!isEmbeddedTabs"
         v-model="activeTab"
         dense
-        class="tw-px-4 tw-border-b tw-border-solid tw-border-[var(--o2-border-color)]"
+        class="tw:px-4 tw:border-b tw:border-solid tw:border-[var(--o2-border-color)]"
         active-color="primary"
         indicator-color="primary"
         align="left"
@@ -121,18 +120,32 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
       <q-tab-panels
         v-model="activeTab"
         animated
-        class="correlation-content tw-flex-1 tw-overflow-auto"
+        class="correlation-content tw:flex-1 tw:overflow-auto"
       >
         <!-- Logs Tab Panel -->
-        <q-tab-panel name="logs" class="tw-p-0">
+        <q-tab-panel name="logs" class="tw:p-0">
+          <!-- Refresh Button -->
+          <div v-if="logsDashboardData" class="tw:p-2 tw:border-b tw:border-solid tw:border-[var(--o2-border-color)] tw:flex tw:justify-end">
+            <q-btn
+              flat
+              dense
+              color="primary"
+              icon="refresh"
+              :label="t('common.refresh')"
+              @click="loadDashboard"
+              :loading="loading"
+              size="sm"
+            />
+          </div>
+
           <!-- Loading State -->
           <div
             v-if="loading"
-            class="tw-flex tw-flex-col tw-items-center tw-justify-center tw-h-full tw-py-20"
+            class="tw:flex tw:flex-col tw:items-center tw:justify-center tw:h-full tw:py-20"
           >
-            <q-spinner-hourglass color="primary" size="3.75rem" class="tw-mb-4" />
-            <div class="tw-text-base">{{ t('correlation.loading') }}</div>
-            <div class="tw-text-xs tw-text-gray-500 tw-mt-2">{{ t('correlation.loadingLogs') }}</div>
+            <q-spinner-hourglass color="primary" size="3.75rem" class="tw:mb-4" />
+            <div class="tw:text-base">{{ t('correlation.loading') }}</div>
+            <div class="tw:text-xs tw:text-gray-500 tw:mt-2">{{ t('correlation.loadingLogs') }}</div>
           </div>
 
           <!-- Logs Dashboard -->
@@ -149,20 +162,31 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           <!-- No Logs State -->
           <div
             v-else
-            class="tw-flex tw-flex-col tw-items-center tw-justify-center tw-h-full tw-py-20"
+            class="tw:flex tw:flex-col tw:items-center tw:justify-center tw:h-full tw:py-20"
           >
-            <q-icon name="article" size="3.75rem" color="grey-6" class="tw-mb-4" />
-            <div class="tw-text-base">{{ t('correlation.noLogsFound') }}</div>
-            <div class="tw-text-sm tw-text-gray-500 tw-mt-2">
+            <q-icon name="article" size="3.75rem" color="grey-6" class="tw:mb-4" />
+            <div class="tw:text-base">{{ t('correlation.noLogsFound') }}</div>
+            <div class="tw:text-sm tw:text-gray-500 tw:mt-2">
               {{ t('correlation.service', { service: serviceName }) }}
             </div>
           </div>
         </q-tab-panel>
 
         <!-- Metrics Tab Panel -->
-        <q-tab-panel name="metrics" class="tw-p-0">
-          <!-- Metrics Selector Button (only shown in metrics tab) -->
-          <div class="tw-p-3 tw-border-b tw-border-solid tw-border-[var(--o2-border-color)] tw-flex tw-items-center tw-justify-end">
+        <q-tab-panel name="metrics" class="tw:p-0">
+          <!-- Metrics Selector and Refresh Buttons -->
+          <div class="tw:p-3 tw:border-b tw:border-solid tw:border-[var(--o2-border-color)] tw:flex tw:items-center tw:justify-end tw:gap-2">
+            <q-btn
+              v-if="dashboardData"
+              flat
+              dense
+              color="primary"
+              icon="refresh"
+              :label="t('common.refresh')"
+              @click="loadDashboard"
+              :loading="loading"
+              size="sm"
+            />
             <q-btn
               outline
               dense
@@ -180,11 +204,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           <!-- Loading State -->
           <div
             v-if="loading"
-            class="tw-flex tw-flex-col tw-items-center tw-justify-center tw-h-full tw-py-20"
+            class="tw:flex tw:flex-col tw:items-center tw:justify-center tw:h-full tw:py-20"
           >
-            <q-spinner-hourglass color="primary" size="3.75rem" class="tw-mb-4" />
-            <div class="tw-text-base">{{ t('correlation.loading') }}</div>
-            <div class="tw-text-xs tw-text-gray-500 tw-mt-2">
+            <q-spinner-hourglass color="primary" size="3.75rem" class="tw:mb-4" />
+            <div class="tw:text-base">{{ t('correlation.loading') }}</div>
+            <div class="tw:text-xs tw:text-gray-500 tw:mt-2">
               {{ t('correlation.loadingMetrics', { count: selectedMetricStreams.length }) }}
             </div>
           </div>
@@ -192,16 +216,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           <!-- Error State -->
           <div
             v-else-if="error"
-            class="tw-flex tw-flex-col tw-items-center tw-justify-center tw-h-full tw-py-20"
+            class="tw:flex tw:flex-col tw:items-center tw:justify-center tw:h-full tw:py-20"
           >
-            <q-icon name="error_outline" size="3.75rem" color="negative" class="tw-mb-4" />
-            <div class="tw-text-base tw-mb-2">{{ t('correlation.failedToLoad') }}</div>
-            <div class="tw-text-sm tw-text-gray-500">{{ error }}</div>
+            <q-icon name="error_outline" size="3.75rem" color="negative" class="tw:mb-4" />
+            <div class="tw:text-base tw:mb-2">{{ t('correlation.failedToLoad') }}</div>
+            <div class="tw:text-sm tw:text-gray-500">{{ error }}</div>
             <q-btn
               outline
               color="primary"
               :label="t('correlation.retryButton')"
-              class="tw-mt-4"
+              class="tw:mt-4"
               @click="loadDashboard"
             />
           </div>
@@ -221,67 +245,81 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           <!-- No Metrics State -->
           <div
             v-else
-            class="tw-flex tw-flex-col tw-items-center tw-justify-center tw-h-full tw-py-20"
+            class="tw:flex tw:flex-col tw:items-center tw:justify-center tw:h-full tw:py-20"
           >
-            <q-icon name="info_outline" size="3.75rem" color="grey-6" class="tw-mb-4" />
-            <div class="tw-text-base">{{ t('correlation.noMetrics') }}</div>
+            <q-icon name="info_outline" size="3.75rem" color="grey-6" class="tw:mb-4" />
+            <div class="tw:text-base">{{ t('correlation.noMetrics') }}</div>
           </div>
         </q-tab-panel>
 
         <!-- Traces Tab Panel -->
-        <q-tab-panel name="traces" class="tw-p-0">
+        <q-tab-panel name="traces" class="tw:p-0">
+          <!-- Refresh Button -->
+          <div v-if="traceCorrelationMode !== null" class="tw:p-2 tw:border-b tw:border-solid tw:border-[var(--o2-border-color)] tw:flex tw:justify-end">
+            <q-btn
+              flat
+              dense
+              color="primary"
+              icon="refresh"
+              :label="t('common.refresh')"
+              @click="loadCorrelatedTraces"
+              :loading="tracesLoading"
+              size="sm"
+            />
+          </div>
+
           <!-- Loading State -->
           <div
             v-if="tracesLoading"
-            class="tw-flex tw-flex-col tw-items-center tw-justify-center tw-h-full tw-py-20"
+            class="tw:flex tw:flex-col tw:items-center tw:justify-center tw:h-full tw:py-20"
           >
-            <q-spinner-hourglass color="primary" size="3.75rem" class="tw-mb-4" />
-            <div class="tw-text-base">{{ t('correlation.loadingTraces') }}</div>
+            <q-spinner-hourglass color="primary" size="3.75rem" class="tw:mb-4" />
+            <div class="tw:text-base">{{ t('correlation.loadingTraces') }}</div>
           </div>
 
           <!-- Error State -->
           <div
             v-else-if="tracesError"
-            class="tw-flex tw-flex-col tw-items-center tw-justify-center tw-h-full tw-py-20"
+            class="tw:flex tw:flex-col tw:items-center tw:justify-center tw:h-full tw:py-20"
           >
-            <q-icon name="error_outline" size="3.75rem" color="negative" class="tw-mb-4" />
-            <div class="tw-text-base tw-mb-2">{{ t('correlation.tracesError') }}</div>
-            <div class="tw-text-sm tw-text-gray-500">{{ tracesError }}</div>
+            <q-icon name="error_outline" size="3.75rem" color="negative" class="tw:mb-4" />
+            <div class="tw:text-base tw:mb-2">{{ t('correlation.tracesError') }}</div>
+            <div class="tw:text-sm tw:text-gray-500">{{ tracesError }}</div>
             <q-btn
               outline
               color="primary"
               :label="t('correlation.retryButton')"
-              class="tw-mt-4"
+              class="tw:mt-4"
               @click="loadCorrelatedTraces"
             />
           </div>
 
           <!-- Direct Trace Correlation - Full Span List -->
-          <div v-else-if="traceCorrelationMode === 'direct' && traceSpanList.length > 0" class="tw-h-full">
+          <div v-else-if="traceCorrelationMode === 'direct' && traceSpanList.length > 0" class="tw:h-full">
             <!-- Trace Header -->
-            <div class="tw-p-3 tw-border-b tw-border-solid tw-border-[var(--o2-border-color)] trace-header-bg">
-              <div class="tw-flex tw-items-center tw-gap-3">
+            <div class="tw:p-3 tw:border-b tw:border-solid tw:border-[var(--o2-border-color)] trace-header-bg">
+              <div class="tw:flex tw:items-center tw:gap-3">
                 <q-icon name="link" color="positive" size="1.25rem" />
-                <div class="tw-flex tw-flex-col">
-                  <span class="tw-text-sm tw-font-semibold">{{ t('correlation.directTraceMatch') }}</span>
+                <div class="tw:flex tw:flex-col">
+                  <span class="tw:text-sm tw:font-semibold">{{ t('correlation.directTraceMatch') }}</span>
                   <a
                     href="#"
-                    class="tw-text-xs tw-text-blue-500 tw-font-mono tw-underline hover:tw-text-blue-700 tw-cursor-pointer"
+                    class="tw:text-xs tw:text-blue-500 tw:font-mono tw:underline hover:tw:text-blue-700 tw:cursor-pointer"
                     @click.prevent="openTraceInNewWindow"
                     :title="t('correlation.openTraceInNewWindow')"
                   >
                     {{ extractedTraceId }}
-                    <q-icon name="open_in_new" size="xs" class="tw-ml-1" />
+                    <q-icon name="open_in_new" size="xs" class="tw:ml-1" />
                   </a>
                 </div>
-                <q-chip dense color="primary" text-color="white" class="tw-ml-auto">
+                <q-chip dense color="primary" text-color="white" class="tw:ml-auto">
                   {{ traceSpanList.length }} {{ t('correlation.spans') }}
                 </q-chip>
               </div>
             </div>
 
             <!-- Span Table -->
-            <div class="tw-p-3 tw-overflow-auto" style="max-height: calc(100% - 4rem)">
+            <div class="tw:p-3 tw:overflow-auto" style="max-height: calc(100% - 4rem)">
               <q-table
                 :rows="traceSpanList"
                 :columns="spanTableColumns"
@@ -293,23 +331,23 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
               >
                 <template v-slot:body-cell-service_name="props">
                   <q-td :props="props">
-                    <div class="tw-flex tw-items-center tw-gap-2">
+                    <div class="tw:flex tw:items-center tw:gap-2">
                       <div
-                        class="tw-w-2 tw-h-2 tw-rounded-full"
+                        class="tw:w-2 tw:h-2 tw:rounded-full"
                         :style="{ backgroundColor: getServiceColor(props.row.service_name) }"
                       />
-                      <span class="tw-font-mono tw-text-xs">{{ props.row.service_name }}</span>
+                      <span class="tw:font-mono tw:text-xs">{{ props.row.service_name }}</span>
                     </div>
                   </q-td>
                 </template>
                 <template v-slot:body-cell-operation_name="props">
                   <q-td :props="props">
-                    <span class="tw-font-mono tw-text-xs">{{ props.row.operation_name }}</span>
+                    <span class="tw:font-mono tw:text-xs">{{ props.row.operation_name }}</span>
                   </q-td>
                 </template>
                 <template v-slot:body-cell-duration="props">
                   <q-td :props="props">
-                    <span class="tw-font-mono tw-text-xs">{{ formatDuration(props.row.duration || 0) }}</span>
+                    <span class="tw:font-mono tw:text-xs">{{ formatDuration(props.row.duration || 0) }}</span>
                   </q-td>
                 </template>
                 <template v-slot:body-cell-span_status="props">
@@ -322,7 +360,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                 </template>
                 <template v-slot:body-cell-start_time="props">
                   <q-td :props="props">
-                    <span class="tw-font-mono tw-text-xs">{{ formatTimestamp(props.row.start_time) }}</span>
+                    <span class="tw:font-mono tw:text-xs">{{ formatTimestamp(props.row.start_time) }}</span>
                   </q-td>
                 </template>
               </q-table>
@@ -330,23 +368,23 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           </div>
 
           <!-- Dimension-based Correlation - Traces List -->
-          <div v-else-if="traceCorrelationMode === 'dimension-based' && tracesForDimensions.length > 0" class="tw-h-full">
+          <div v-else-if="traceCorrelationMode === 'dimension-based' && tracesForDimensions.length > 0" class="tw:h-full">
             <!-- Header -->
-            <div class="tw-p-3 tw-border-b tw-border-solid tw-border-[var(--o2-border-color)] trace-header-bg">
-              <div class="tw-flex tw-items-center tw-gap-3">
+            <div class="tw:p-3 tw:border-b tw:border-solid tw:border-[var(--o2-border-color)] trace-header-bg">
+              <div class="tw:flex tw:items-center tw:gap-3">
                 <q-icon name="hub" color="primary" size="1.25rem" />
-                <div class="tw-flex tw-flex-col">
-                  <span class="tw-text-sm tw-font-semibold">{{ t('correlation.dimensionBasedCorrelation') }}</span>
-                  <span class="tw-text-xs tw-text-gray-500">{{ t('correlation.tracesFromService', { service: serviceName }) }}</span>
+                <div class="tw:flex tw:flex-col">
+                  <span class="tw:text-sm tw:font-semibold">{{ t('correlation.dimensionBasedCorrelation') }}</span>
+                  <span class="tw:text-xs tw:text-gray-500">{{ t('correlation.tracesFromService', { service: serviceName }) }}</span>
                 </div>
-                <q-chip dense color="primary" text-color="white" class="tw-ml-auto">
+                <q-chip dense color="primary" text-color="white" class="tw:ml-auto">
                   {{ tracesForDimensions.length }} {{ t('menu.traces') }}
                 </q-chip>
               </div>
             </div>
 
             <!-- Traces Table -->
-            <div class="tw-p-3 tw-overflow-auto" style="max-height: calc(100% - 4rem)">
+            <div class="tw:p-3 tw:overflow-auto" style="max-height: calc(100% - 4rem)">
               <q-table
                 :rows="tracesForDimensions"
                 :columns="traceListColumns"
@@ -359,37 +397,37 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                 <template v-slot:body-cell-trace_id="slotProps">
                   <q-td :props="slotProps">
                     <span
-                      class="tw-font-mono tw-text-xs tw-text-primary tw-cursor-pointer hover:tw-underline"
+                      class="tw:font-mono tw:text-xs tw:text-primary tw:cursor-pointer hover:tw:underline"
                       @click="openTraceInNewWindow(slotProps.row.trace_id)"
                       :title="t('correlation.openTraceInNewWindow')"
                     >
                       {{ slotProps.row.trace_id?.substring(0, 16) }}...
-                      <q-icon name="open_in_new" size="0.75rem" class="tw-ml-1" />
+                      <q-icon name="open_in_new" size="0.75rem" class="tw:ml-1" />
                     </span>
                   </q-td>
                 </template>
                 <template v-slot:body-cell-service_name="props">
                   <q-td :props="props">
-                    <span class="tw-font-mono tw-text-xs">
+                    <span class="tw:font-mono tw:text-xs">
                       {{ Array.isArray(props.row.service_name) ? props.row.service_name.map((s: any) => s.service_name).join(', ') : props.row.service_name }}
                     </span>
                   </q-td>
                 </template>
                 <template v-slot:body-cell-operation_name="props">
                   <q-td :props="props">
-                    <span class="tw-font-mono tw-text-xs">
+                    <span class="tw:font-mono tw:text-xs">
                       {{ Array.isArray(props.row.operation_name) ? props.row.operation_name[0] : props.row.operation_name }}
                     </span>
                   </q-td>
                 </template>
                 <template v-slot:body-cell-duration="props">
                   <q-td :props="props">
-                    <span class="tw-font-mono tw-text-xs">{{ formatDuration(props.row.duration || 0) }}</span>
+                    <span class="tw:font-mono tw:text-xs">{{ formatDuration(props.row.duration || 0) }}</span>
                   </q-td>
                 </template>
                 <template v-slot:body-cell-spans="props">
                   <q-td :props="props">
-                    <span class="tw-font-mono tw-text-xs">
+                    <span class="tw:font-mono tw:text-xs">
                       {{ Array.isArray(props.row.spans) ? props.row.spans[0] : props.row.spans }}
                     </span>
                   </q-td>
@@ -404,7 +442,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                 </template>
                 <template v-slot:body-cell-start_time="props">
                   <q-td :props="props">
-                    <span class="tw-font-mono tw-text-xs">{{ formatTimestamp(props.row.start_time) }}</span>
+                    <span class="tw:font-mono tw:text-xs">{{ formatTimestamp(props.row.start_time) }}</span>
                   </q-td>
                 </template>
               </q-table>
@@ -414,11 +452,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           <!-- No Traces Found State -->
           <div
             v-else-if="traceCorrelationMode !== null"
-            class="tw-flex tw-flex-col tw-items-center tw-justify-center tw-h-full tw-py-20"
+            class="tw:flex tw:flex-col tw:items-center tw:justify-center tw:h-full tw:py-20"
           >
-            <q-icon name="search_off" size="3.75rem" color="grey-6" class="tw-mb-4" />
-            <div class="tw-text-base">{{ t('correlation.noTracesFound') }}</div>
-            <div class="tw-text-sm tw-text-gray-500 tw-mt-2">
+            <q-icon name="search_off" size="3.75rem" color="grey-6" class="tw:mb-4" />
+            <div class="tw:text-base">{{ t('correlation.noTracesFound') }}</div>
+            <div class="tw:text-sm tw:text-gray-500 tw:mt-2">
               {{ t('correlation.noTracesDescription', { service: serviceName }) }}
             </div>
           </div>
@@ -426,11 +464,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           <!-- Initial State (waiting for tab to be shown) -->
           <div
             v-else
-            class="tw-flex tw-flex-col tw-items-center tw-justify-center tw-h-full tw-py-20"
+            class="tw:flex tw:flex-col tw:items-center tw:justify-center tw:h-full tw:py-20"
           >
-            <q-icon name="account_tree" size="3.75rem" color="grey-6" class="tw-mb-4" />
-            <div class="tw-text-base">{{ t('correlation.correlatedTraces') }}</div>
-            <div class="tw-text-sm tw-text-gray-500 tw-mt-2">
+            <q-icon name="account_tree" size="3.75rem" color="grey-6" class="tw:mb-4" />
+            <div class="tw:text-base">{{ t('correlation.correlatedTraces') }}</div>
+            <div class="tw:text-sm tw:text-gray-500 tw:mt-2">
               {{ t('correlation.correlatedTracesFor', { service: serviceName }) }}
             </div>
           </div>
@@ -442,31 +480,30 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
   <!-- Embedded Tabs Mode -->
   <div v-else class="correlation-dashboard-embedded">
     <!-- Dimensions Display - Stable (matched) and Unstable (additional) -->
-    <div class="tw-py-2 tw-px-4 tw-border-b tw-border-solid tw-border-[var(--o2-border-color)]">
-      <div class="tw-flex tw-items-center tw-gap-3 tw-flex-wrap">
-        <span class="tw-text-xs tw-font-semibold tw-opacity-70">
+    <div class="tw:py-2 tw:px-4 tw:border-b tw:border-solid tw:border-[var(--o2-border-color)]">
+      <div class="tw:flex tw:items-center tw:gap-3 tw:flex-wrap">
+        <span class="tw:text-xs tw:font-semibold tw:opacity-70">
           {{ t('correlation.filters') }}:
         </span>
         <div
-          v-for="(value, key) in activeDimensions"
+          v-for="(value, key) in pendingDimensions"
           :key="key"
-          class="tw-flex tw-items-center tw-gap-2"
-          :class="{ 'tw-opacity-60': unstableDimensionKeys.has(key) }"
+          class="tw:flex tw:items-center tw:gap-2"
         >
           <span
-            class="tw-text-xs tw-font-semibold"
-            :class="unstableDimensionKeys.has(key) ? 'tw-text-gray-500' : ''"
+            class="tw:text-xs tw:font-semibold"
+            :class="unstableDimensionKeys.has(key) ? 'tw:opacity-60' : 'tw:opacity-100'"
           >
             {{ key }}:
           </span>
           <q-select
-            v-model="activeDimensions[key]"
+            v-model="pendingDimensions[key]"
             :options="getDimensionOptions(key, value)"
             dense
             outlined
             emit-value
             map-options
-            @update:model-value="onDimensionChange"
+            @update:model-value="onPendingDimensionChange"
             class="dimension-dropdown"
             borderless
             style="min-width: 120px"
@@ -475,6 +512,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             Unstable dimension - changes on pod restart. Default: All values.
           </q-tooltip>
         </div>
+        <!-- Apply Button -->
+        <q-btn
+          flat
+          dense
+          no-caps
+          text-color="light-text"
+          :label="t('common.apply')"
+          :disable="!hasPendingChanges"
+          @click="applyDimensionChanges"
+          class="o2-secondary-button tw:ml-2"
+          data-test="apply-dimension-filters-embedded"
+          style="line-height: 2.2rem !important;"
+        />
       </div>
     </div>
 
@@ -482,9 +532,23 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     <q-tab-panels
       v-model="activeTab"
       animated
-      class="correlation-content tw-flex-1 tw-overflow-auto"
+      class="correlation-content tw:flex-1 tw:overflow-auto"
     >
-      <q-tab-panel name="logs" class="tw-p-0">
+      <q-tab-panel name="logs" class="tw:p-0">
+        <!-- Refresh Button -->
+        <div v-if="logsDashboardData" class="tw:p-2 tw:border-b tw:border-solid tw:border-[var(--o2-border-color)] tw:flex tw:justify-end">
+          <q-btn
+            flat
+            dense
+            color="primary"
+            icon="refresh"
+            :label="t('common.refresh')"
+            @click="loadDashboard"
+            :loading="loading"
+            size="sm"
+          />
+        </div>
+
         <RenderDashboardCharts
           v-if="logsDashboardData"
           :key="logsDashboardRenderKey"
@@ -496,8 +560,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         />
       </q-tab-panel>
 
-      <q-tab-panel name="metrics" class="tw-p-0">
-        <div class="tw-p-3 tw-border-b tw-border-solid tw-border-[var(--o2-border-color)] tw-flex tw-items-center tw-justify-end">
+      <q-tab-panel name="metrics" class="tw:p-0">
+        <div class="tw:p-3 tw:border-b tw:border-solid tw:border-[var(--o2-border-color)] tw:flex tw:items-center tw:justify-end tw:gap-2">
+          <q-btn
+            v-if="dashboardData"
+            flat
+            dense
+            color="primary"
+            icon="refresh"
+            :label="t('common.refresh')"
+            @click="loadDashboard"
+            :loading="loading"
+            size="sm"
+          />
           <q-btn
             outline
             dense
@@ -522,59 +597,73 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         />
       </q-tab-panel>
 
-      <q-tab-panel name="traces" class="tw-p-0">
+      <q-tab-panel name="traces" class="tw:p-0">
+          <!-- Refresh Button -->
+          <div v-if="traceCorrelationMode !== null" class="tw:p-2 tw:border-b tw:border-solid tw:border-[var(--o2-border-color)] tw:flex tw:justify-end">
+            <q-btn
+              flat
+              dense
+              color="primary"
+              icon="refresh"
+              :label="t('common.refresh')"
+              @click="loadCorrelatedTraces"
+              :loading="tracesLoading"
+              size="sm"
+            />
+          </div>
+
           <!-- Loading State -->
           <div
             v-if="tracesLoading"
-            class="tw-flex tw-flex-col tw-items-center tw-justify-center tw-h-full tw-py-20"
+            class="tw:flex tw:flex-col tw:items-center tw:justify-center tw:h-full tw:py-20"
           >
-            <q-spinner-hourglass color="primary" size="3.75rem" class="tw-mb-4" />
-            <div class="tw-text-base">{{ t('correlation.loadingTraces') }}</div>
+            <q-spinner-hourglass color="primary" size="3.75rem" class="tw:mb-4" />
+            <div class="tw:text-base">{{ t('correlation.loadingTraces') }}</div>
           </div>
 
           <!-- Error State -->
           <div
             v-else-if="tracesError"
-            class="tw-flex tw-flex-col tw-items-center tw-justify-center tw-h-full tw-py-20"
+            class="tw:flex tw:flex-col tw:items-center tw:justify-center tw:h-full tw:py-20"
           >
-            <q-icon name="error_outline" size="3.75rem" color="negative" class="tw-mb-4" />
-            <div class="tw-text-base tw-mb-2">{{ t('correlation.tracesError') }}</div>
-            <div class="tw-text-sm tw-text-gray-500">{{ tracesError }}</div>
+            <q-icon name="error_outline" size="3.75rem" color="negative" class="tw:mb-4" />
+            <div class="tw:text-base tw:mb-2">{{ t('correlation.tracesError') }}</div>
+            <div class="tw:text-sm tw:text-gray-500">{{ tracesError }}</div>
             <q-btn
               outline
               color="primary"
               :label="t('correlation.retryButton')"
-              class="tw-mt-4"
+              class="tw:mt-4"
               @click="loadCorrelatedTraces"
             />
           </div>
 
           <!-- Direct Trace Correlation - Full Span List -->
-          <div v-else-if="traceCorrelationMode === 'direct' && traceSpanList.length > 0" class="tw-h-full">
+          <div v-else-if="traceCorrelationMode === 'direct' && traceSpanList.length > 0" class="tw:h-full">
             <!-- Trace Header -->
-            <div class="tw-p-3 tw-border-b tw-border-solid tw-border-[var(--o2-border-color)] trace-header-bg">
-              <div class="tw-flex tw-items-center tw-gap-3">
+            <div class="tw:p-3 tw:border-b tw:border-solid tw:border-[var(--o2-border-color)] trace-header-bg">
+              <div class="tw:flex tw:items-center tw:gap-3">
                 <q-icon name="link" color="positive" size="1.25rem" />
-                <div class="tw-flex tw-flex-col">
-                  <span class="tw-text-sm tw-font-semibold">{{ t('correlation.directTraceMatch') }}</span>
+                <div class="tw:flex tw:flex-col">
+                  <span class="tw:text-sm tw:font-semibold">{{ t('correlation.directTraceMatch') }}</span>
                   <a
                     href="#"
-                    class="tw-text-xs tw-text-blue-500 tw-font-mono tw-underline hover:tw-text-blue-700 tw-cursor-pointer"
+                    class="tw:text-xs tw:text-blue-500 tw:font-mono tw:underline hover:tw:text-blue-700 tw:cursor-pointer"
                     @click.prevent="openTraceInNewWindow"
                     :title="t('correlation.openTraceInNewWindow')"
                   >
                     {{ extractedTraceId }}
-                    <q-icon name="open_in_new" size="xs" class="tw-ml-1" />
+                    <q-icon name="open_in_new" size="xs" class="tw:ml-1" />
                   </a>
                 </div>
-                <q-chip dense color="primary" text-color="white" class="tw-ml-auto">
+                <q-chip dense color="primary" text-color="white" class="tw:ml-auto">
                   {{ traceSpanList.length }} {{ t('correlation.spans') }}
                 </q-chip>
               </div>
             </div>
 
             <!-- Span Table -->
-            <div class="tw-p-3 tw-overflow-auto" style="max-height: calc(100% - 4rem)">
+            <div class="tw:p-3 tw:overflow-auto" style="max-height: calc(100% - 4rem)">
               <q-table
                 :rows="traceSpanList"
                 :columns="spanTableColumns"
@@ -586,23 +675,23 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
               >
                 <template v-slot:body-cell-service_name="props">
                   <q-td :props="props">
-                    <div class="tw-flex tw-items-center tw-gap-2">
+                    <div class="tw:flex tw:items-center tw:gap-2">
                       <div
-                        class="tw-w-2 tw-h-2 tw-rounded-full"
+                        class="tw:w-2 tw:h-2 tw:rounded-full"
                         :style="{ backgroundColor: getServiceColor(props.row.service_name) }"
                       />
-                      <span class="tw-font-mono tw-text-xs">{{ props.row.service_name }}</span>
+                      <span class="tw:font-mono tw:text-xs">{{ props.row.service_name }}</span>
                     </div>
                   </q-td>
                 </template>
                 <template v-slot:body-cell-operation_name="props">
                   <q-td :props="props">
-                    <span class="tw-font-mono tw-text-xs">{{ props.row.operation_name }}</span>
+                    <span class="tw:font-mono tw:text-xs">{{ props.row.operation_name }}</span>
                   </q-td>
                 </template>
                 <template v-slot:body-cell-duration="props">
                   <q-td :props="props">
-                    <span class="tw-font-mono tw-text-xs">{{ formatDuration(props.row.duration || 0) }}</span>
+                    <span class="tw:font-mono tw:text-xs">{{ formatDuration(props.row.duration || 0) }}</span>
                   </q-td>
                 </template>
                 <template v-slot:body-cell-span_status="props">
@@ -615,7 +704,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                 </template>
                 <template v-slot:body-cell-start_time="props">
                   <q-td :props="props">
-                    <span class="tw-font-mono tw-text-xs">{{ formatTimestamp(props.row.start_time) }}</span>
+                    <span class="tw:font-mono tw:text-xs">{{ formatTimestamp(props.row.start_time) }}</span>
                   </q-td>
                 </template>
               </q-table>
@@ -623,23 +712,23 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           </div>
 
           <!-- Dimension-based Correlation - Traces List -->
-          <div v-else-if="traceCorrelationMode === 'dimension-based' && tracesForDimensions.length > 0" class="tw-h-full">
+          <div v-else-if="traceCorrelationMode === 'dimension-based' && tracesForDimensions.length > 0" class="tw:h-full">
             <!-- Header -->
-            <div class="tw-p-3 tw-border-b tw-border-solid tw-border-[var(--o2-border-color)] trace-header-bg">
-              <div class="tw-flex tw-items-center tw-gap-3">
+            <div class="tw:p-3 tw:border-b tw:border-solid tw:border-[var(--o2-border-color)] trace-header-bg">
+              <div class="tw:flex tw:items-center tw:gap-3">
                 <q-icon name="hub" color="primary" size="1.25rem" />
-                <div class="tw-flex tw-flex-col">
-                  <span class="tw-text-sm tw-font-semibold">{{ t('correlation.dimensionBasedCorrelation') }}</span>
-                  <span class="tw-text-xs tw-text-gray-500">{{ t('correlation.tracesFromService', { service: serviceName }) }}</span>
+                <div class="tw:flex tw:flex-col">
+                  <span class="tw:text-sm tw:font-semibold">{{ t('correlation.dimensionBasedCorrelation') }}</span>
+                  <span class="tw:text-xs tw:text-gray-500">{{ t('correlation.tracesFromService', { service: serviceName }) }}</span>
                 </div>
-                <q-chip dense color="primary" text-color="white" class="tw-ml-auto">
+                <q-chip dense color="primary" text-color="white" class="tw:ml-auto">
                   {{ tracesForDimensions.length }} {{ t('menu.traces') }}
                 </q-chip>
               </div>
             </div>
 
             <!-- Traces Table -->
-            <div class="tw-p-3 tw-overflow-auto" style="max-height: calc(100% - 4rem)">
+            <div class="tw:p-3 tw:overflow-auto" style="max-height: calc(100% - 4rem)">
               <q-table
                 :rows="tracesForDimensions"
                 :columns="traceListColumns"
@@ -652,37 +741,37 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                 <template v-slot:body-cell-trace_id="slotProps">
                   <q-td :props="slotProps">
                     <span
-                      class="tw-font-mono tw-text-xs tw-text-primary tw-cursor-pointer hover:tw-underline"
+                      class="tw:font-mono tw:text-xs tw:text-primary tw:cursor-pointer hover:tw:underline"
                       @click="openTraceInNewWindow(slotProps.row.trace_id)"
                       :title="t('correlation.openTraceInNewWindow')"
                     >
                       {{ slotProps.row.trace_id?.substring(0, 16) }}...
-                      <q-icon name="open_in_new" size="0.75rem" class="tw-ml-1" />
+                      <q-icon name="open_in_new" size="0.75rem" class="tw:ml-1" />
                     </span>
                   </q-td>
                 </template>
                 <template v-slot:body-cell-service_name="props">
                   <q-td :props="props">
-                    <span class="tw-font-mono tw-text-xs">
+                    <span class="tw:font-mono tw:text-xs">
                       {{ Array.isArray(props.row.service_name) ? props.row.service_name.map((s: any) => s.service_name).join(', ') : props.row.service_name }}
                     </span>
                   </q-td>
                 </template>
                 <template v-slot:body-cell-operation_name="props">
                   <q-td :props="props">
-                    <span class="tw-font-mono tw-text-xs">
+                    <span class="tw:font-mono tw:text-xs">
                       {{ Array.isArray(props.row.operation_name) ? props.row.operation_name[0] : props.row.operation_name }}
                     </span>
                   </q-td>
                 </template>
                 <template v-slot:body-cell-duration="props">
                   <q-td :props="props">
-                    <span class="tw-font-mono tw-text-xs">{{ formatDuration(props.row.duration || 0) }}</span>
+                    <span class="tw:font-mono tw:text-xs">{{ formatDuration(props.row.duration || 0) }}</span>
                   </q-td>
                 </template>
                 <template v-slot:body-cell-spans="props">
                   <q-td :props="props">
-                    <span class="tw-font-mono tw-text-xs">
+                    <span class="tw:font-mono tw:text-xs">
                       {{ Array.isArray(props.row.spans) ? props.row.spans[0] : props.row.spans }}
                     </span>
                   </q-td>
@@ -697,7 +786,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                 </template>
                 <template v-slot:body-cell-start_time="props">
                   <q-td :props="props">
-                    <span class="tw-font-mono tw-text-xs">{{ formatTimestamp(props.row.start_time) }}</span>
+                    <span class="tw:font-mono tw:text-xs">{{ formatTimestamp(props.row.start_time) }}</span>
                   </q-td>
                 </template>
               </q-table>
@@ -707,11 +796,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           <!-- No Traces Found State -->
           <div
             v-else-if="traceCorrelationMode !== null"
-            class="tw-flex tw-flex-col tw-items-center tw-justify-center tw-h-full tw-py-20"
+            class="tw:flex tw:flex-col tw:items-center tw:justify-center tw:h-full tw:py-20"
           >
-            <q-icon name="search_off" size="3.75rem" color="grey-6" class="tw-mb-4" />
-            <div class="tw-text-base">{{ t('correlation.noTracesFound') }}</div>
-            <div class="tw-text-sm tw-text-gray-500 tw-mt-2">
+            <q-icon name="search_off" size="3.75rem" color="grey-6" class="tw:mb-4" />
+            <div class="tw:text-base">{{ t('correlation.noTracesFound') }}</div>
+            <div class="tw:text-sm tw:text-gray-500 tw:mt-2">
               {{ t('correlation.noTracesDescription', { service: serviceName }) }}
             </div>
           </div>
@@ -719,11 +808,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           <!-- Initial State (waiting for tab to be shown) -->
           <div
             v-else
-            class="tw-flex tw-flex-col tw-items-center tw-justify-center tw-h-full tw-py-20"
+            class="tw:flex tw:flex-col tw:items-center tw:justify-center tw:h-full tw:py-20"
           >
-            <q-icon name="account_tree" size="3.75rem" color="grey-6" class="tw-mb-4" />
-            <div class="tw-text-base">{{ t('correlation.correlatedTraces') }}</div>
-            <div class="tw-text-sm tw-text-gray-500 tw-mt-2">
+            <q-icon name="account_tree" size="3.75rem" color="grey-6" class="tw:mb-4" />
+            <div class="tw:text-base">{{ t('correlation.correlatedTraces') }}</div>
+            <div class="tw:text-sm tw:text-gray-500 tw:mt-2">
               {{ t('correlation.correlatedTracesFor', { service: serviceName }) }}
             </div>
           </div>
@@ -734,9 +823,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
   <!-- Metric Stream Selector Dialog -->
   <q-dialog v-model="showMetricSelector">
     <q-card class="metric-selector-dialog">
-      <q-card-section class="tw-p-4 tw-border-b">
-        <div class="tw-flex tw-items-center tw-justify-between tw-mb-3">
-          <div class="tw-text-base tw-font-semibold">{{ t('correlation.selectMetrics') }}</div>
+      <q-card-section class="tw:p-4 tw:border-b">
+        <div class="tw:flex tw:items-center tw:justify-between tw:mb-3">
+          <div class="tw:text-base tw:font-semibold">{{ t('correlation.selectMetrics') }}</div>
           <q-btn flat round dense icon="close" v-close-popup />
         </div>
 
@@ -747,7 +836,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           outlined
           :placeholder="t('search.searchField')"
           clearable
-          class="tw-w-full"
+          class="tw:w-full"
         >
           <template #prepend>
             <q-icon name="search" />
@@ -755,7 +844,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         </q-input>
       </q-card-section>
 
-      <q-card-section class="tw-p-0 metric-list-container">
+      <q-card-section class="tw:p-0 metric-list-container">
         <q-list v-if="filteredMetricStreams.length > 0">
           <q-item
             v-for="stream in filteredMetricStreams"
@@ -779,7 +868,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         </q-list>
 
         <!-- No results message -->
-        <div v-else class="tw-p-4 tw-text-center tw-text-gray-500">
+        <div v-else class="tw:p-4 tw:text-center tw:text-gray-500">
           {{ t('search.noResult') }}
         </div>
       </q-card-section>
@@ -992,10 +1081,6 @@ const getUniqueStreams = (streams: StreamInfo[]) => {
  * - k8s_node_name maps to 'k8s-node-id' which is in additionalDimensions -> set to SELECT_ALL_VALUE
  */
 const applyUnstableDimensionDefaults = (streams: StreamInfo[]): StreamInfo[] => {
-  console.log("[METRICS-DEBUG] ========== applyUnstableDimensionDefaults START ==========");
-  console.log("[METRICS-DEBUG] Input streams count:", streams.length);
-  console.log("[METRICS-DEBUG] Input streams:", streams.map(s => ({ name: s.stream_name, filters: s.filters })));
-
   // Collect ALL unstable dimension IDs from:
   // 1. additionalDimensions (explicitly marked as unstable)
   // 2. matchedDimensions where value is already SELECT_ALL_VALUE (unstable dims with wildcard)
@@ -1016,19 +1101,12 @@ const applyUnstableDimensionDefaults = (streams: StreamInfo[]): StreamInfo[] => 
     }
   }
 
-  console.log("[METRICS-DEBUG] additionalDimensions:", additionalDims);
-  console.log("[METRICS-DEBUG] matchedDimensions:", matchedDims);
-  console.log("[METRICS-DEBUG] unstableDimIds (combined):", [...unstableDimIds]);
-
   if (unstableDimIds.size === 0) {
-    console.log("[METRICS-DEBUG] No unstable dimensions found, returning streams unchanged");
-    console.log("[METRICS-DEBUG] ========== applyUnstableDimensionDefaults END ==========");
     return streams;
   }
 
   // Build reverse lookup: field_name -> semantic_dimension_id
   // Using semanticGroups from useServiceCorrelation()
-  console.log("[METRICS-DEBUG] semanticGroups.value.length:", semanticGroups.value.length);
 
   const fieldToDimensionId = new Map<string, string>();
   for (const group of semanticGroups.value) {
@@ -1036,8 +1114,6 @@ const applyUnstableDimensionDefaults = (streams: StreamInfo[]): StreamInfo[] => 
       fieldToDimensionId.set(field, group.id);
     }
   }
-  console.log("[METRICS-DEBUG] fieldToDimensionId map size:", fieldToDimensionId.size);
-  console.log("[METRICS-DEBUG] fieldToDimensionId entries (first 20):", [...fieldToDimensionId.entries()].slice(0, 20));
 
   const result = streams.map(stream => {
     const updatedFilters = { ...stream.filters };
@@ -1049,8 +1125,6 @@ const applyUnstableDimensionDefaults = (streams: StreamInfo[]): StreamInfo[] => 
       // Look up the semantic dimension ID for this field name
       const dimensionId = fieldToDimensionId.get(filterKey);
 
-      console.log(`[METRICS-DEBUG] Stream ${stream.stream_name}: filterKey=${filterKey}, dimensionId=${dimensionId}, isUnstable=${dimensionId ? unstableDimIds.has(dimensionId) : 'N/A'}`);
-
       if (dimensionId && unstableDimIds.has(dimensionId)) {
         // This filter's field maps to an unstable dimension - set to wildcard
         updatedFilters[filterKey] = SELECT_ALL_VALUE;
@@ -1060,22 +1134,12 @@ const applyUnstableDimensionDefaults = (streams: StreamInfo[]): StreamInfo[] => 
       }
     }
 
-    if (changedKeys.length > 0) {
-      console.log(`[METRICS-DEBUG] Stream ${stream.stream_name}: SET TO SELECT_ALL_VALUE: ${changedKeys.join(', ')}`);
-    }
-    if (notMatchedKeys.length > 0) {
-      console.log(`[METRICS-DEBUG] Stream ${stream.stream_name}: NO SEMANTIC MATCH for: ${notMatchedKeys.join(', ')}`);
-    }
-
-    console.log(`[METRICS-DEBUG] Stream ${stream.stream_name}: FINAL filters:`, updatedFilters);
-
     return {
       ...stream,
       filters: updatedFilters,
     };
   });
 
-  console.log("[METRICS-DEBUG] ========== applyUnstableDimensionDefaults END ==========");
   return result;
 };
 
@@ -1172,11 +1236,8 @@ const fetchMetricSchemas = async (streamNames: string[]) => {
     const missingStreams = streamNames.filter(name => !cachedMetrics[name]?.metrics_meta);
 
     if (missingStreams.length === 0) {
-      console.log("[TelemetryCorrelationDashboard] All schemas already cached");
       return cachedMetrics;
     }
-
-    console.log("[TelemetryCorrelationDashboard] Fetching schemas for:", missingStreams);
 
     // Fetch all metric streams with schema in one API call
     const response = await streamService.nameList(
@@ -1203,8 +1264,6 @@ const fetchMetricSchemas = async (streamNames: string[]) => {
       const updatedMetrics = { ...cachedMetrics, ...schemasMap };
       store.dispatch("streams/setMetricsStreams", updatedMetrics);
 
-      console.log("[TelemetryCorrelationDashboard] Cached schemas:", schemasMap);
-
       return updatedMetrics;
     }
 
@@ -1217,19 +1276,14 @@ const fetchMetricSchemas = async (streamNames: string[]) => {
 
 // Handle pending dimension value change - just updates pending state, doesn't regenerate queries
 const onPendingDimensionChange = () => {
-  console.log("[TelemetryCorrelationDashboard] Pending dimension changed:", pendingDimensions.value);
+  // console.log("[TelemetryCorrelationDashboard] Pending dimension changed:", pendingDimensions.value);
   // No action needed - hasPendingChanges computed will update automatically
 };
 
 // Apply pending dimension changes and regenerate dashboard
 const applyDimensionChanges = () => {
-  console.log("[TelemetryCorrelationDashboard] Applying dimension changes:", pendingDimensions.value);
-  console.log("[TelemetryCorrelationDashboard] activeDimensions BEFORE:", activeDimensions.value);
-
   // Copy pending to active
   activeDimensions.value = { ...pendingDimensions.value };
-
-  console.log("[TelemetryCorrelationDashboard] activeDimensions AFTER:", activeDimensions.value);
 
   // Build field_name -> dimension_id mapping from semantic groups
   // This is the same approach as applyUnstableDimensionDefaults
@@ -1240,24 +1294,18 @@ const applyDimensionChanges = () => {
     }
   }
 
-  console.log("[TelemetryCorrelationDashboard] applyDimensionChanges - fieldToDimensionId size:", fieldToDimensionId.size);
-  console.log("[TelemetryCorrelationDashboard] applyDimensionChanges - selectedMetricStreams count:", selectedMetricStreams.value.length);
-
   // Update metric stream filters with new dimension values
   // Use semantic groups to map filter field names to dimension IDs
   selectedMetricStreams.value = selectedMetricStreams.value.map(stream => {
     const updatedFilters = { ...stream.filters };
-    console.log(`[TelemetryCorrelationDashboard] Processing stream ${stream.stream_name}, filter keys:`, Object.keys(stream.filters));
-
+    
     // For each filter in the stream, find its semantic dimension ID
     // and update with the new value from activeDimensions
     for (const [filterKey, _filterValue] of Object.entries(stream.filters)) {
       const dimensionId = fieldToDimensionId.get(filterKey);
-      console.log(`[TelemetryCorrelationDashboard]   filterKey=${filterKey}, dimensionId=${dimensionId}, hasInActiveDims=${dimensionId ? activeDimensions.value[dimensionId] !== undefined : 'N/A'}`);
       if (dimensionId && activeDimensions.value[dimensionId] !== undefined) {
         const newValue = activeDimensions.value[dimensionId];
         updatedFilters[filterKey] = newValue;
-        console.log(`[TelemetryCorrelationDashboard] applyDimensionChanges: ${filterKey} (${dimensionId}) -> ${newValue}`);
       }
     }
 
@@ -1267,8 +1315,6 @@ const applyDimensionChanges = () => {
     };
   });
 
-  console.log("[TelemetryCorrelationDashboard] Updated metric streams:", selectedMetricStreams.value);
-
   // Note: For logs, the filters are built from config.matchedDimensions in the composable
   // which we're already updating via activeDimensions
 
@@ -1277,7 +1323,6 @@ const applyDimensionChanges = () => {
 };
 
 const loadDashboard = async () => {
-  console.log("[TelemetryCorrelationDashboard] loadDashboard CALLED - stack:", new Error().stack?.split('\n').slice(1, 4).join(' <- '));
   try {
     loading.value = true;
     error.value = null;
@@ -1304,18 +1349,15 @@ const loadDashboard = async () => {
     };
 
     // Generate metrics dashboard JSON (if we have metrics)
-    console.log("[TelemetryCorrelationDashboard] loadDashboard - selectedMetricStreams.length:", selectedMetricStreams.value.length);
     if (selectedMetricStreams.value.length > 0) {
-      console.log("[TelemetryCorrelationDashboard] loadDashboard - selectedMetricStreams filters:");
-      selectedMetricStreams.value.forEach(s => {
-        console.log(`  ${s.stream_name}:`, s.filters);
-      });
+      // selectedMetricStreams.value.forEach(s => {
+      //   console.log(`  ${s.stream_name}:`, s.filters);
+      // });
       const dashboard = generateDashboard(selectedMetricStreams.value, config);
-      console.log("[TelemetryCorrelationDashboard] Generated metrics dashboard:", dashboard);
       dashboardData.value = dashboard;
       dashboardRenderKey.value++;
     } else {
-      console.log("[TelemetryCorrelationDashboard] No metric streams selected, skipping metrics dashboard");
+      // console.log("[TelemetryCorrelationDashboard] No metric streams selected, skipping metrics dashboard");
     }
 
     // Generate logs dashboard JSON
@@ -1329,12 +1371,11 @@ const loadDashboard = async () => {
       const logsDashboard = generateLogsDashboard(props.logStreams || [], config);
       logsDashboardData.value = logsDashboard;
       logsDashboardRenderKey.value++;
-      console.log("[TelemetryCorrelationDashboard] Generated logs dashboard:", logsDashboard);
     } else {
-      console.log("[TelemetryCorrelationDashboard] No log streams and not from logs page");
+      // console.log("[TelemetryCorrelationDashboard] No log streams and not from logs page");
     }
   } catch (err: any) {
-    console.error("[TelemetryCorrelationDashboard] Error loading correlation dashboard:", err);
+    // console.error("[TelemetryCorrelationDashboard] Error loading correlation dashboard:", err);
     error.value = err.message || t('correlation.failedToLoad');
     showErrorNotification(error.value);
   } finally {
@@ -1420,8 +1461,6 @@ const addMetricPanels = async (addedStreams: StreamInfo[]) => {
     if (dashboardChartsRef.value?.refreshGridStack) {
       await dashboardChartsRef.value.refreshGridStack();
     }
-
-    console.log("[TelemetryCorrelationDashboard] Added", addedStreams.length, "new metric panels without full reload");
   } catch (err: any) {
     console.error("[TelemetryCorrelationDashboard] Error adding metric panels, falling back to full reload:", err);
     loadDashboard();
@@ -1567,7 +1606,6 @@ const extractTraceIdFromText = (text: string): string | null => {
   for (const pattern of patterns) {
     const match = text.match(pattern);
     if (match && match[1] && isValidTraceId(match[1])) {
-      console.log(`[TelemetryCorrelationDashboard] Found trace_id in text via pattern ${pattern.source}:`, match[1]);
       return match[1];
     }
   }
@@ -1585,11 +1623,8 @@ const extractTraceIdFromText = (text: string): string | null => {
 const extractTraceIdFromLog = (): string | null => {
   const logRecord = props.availableDimensions;
   if (!logRecord) {
-    console.log("[TelemetryCorrelationDashboard] No log record (availableDimensions) provided");
     return null;
   }
-
-  console.log("[TelemetryCorrelationDashboard] extractTraceIdFromLog - log record keys:", Object.keys(logRecord));
 
   // Get the configured field name, default to 'trace_id'
   const configuredTraceIdField = store.state.organizationData?.organizationSettings?.trace_id_field_name || 'trace_id';
@@ -1598,21 +1633,18 @@ const extractTraceIdFromLog = (): string | null => {
   if (logRecord[configuredTraceIdField]) {
     const value = String(logRecord[configuredTraceIdField]);
     if (isValidTraceId(value)) {
-      console.log(`[TelemetryCorrelationDashboard] Found trace_id via configured field '${configuredTraceIdField}':`, value);
       return value;
     }
   }
 
   // 2. Derive all field name variations from the configured name and scan them
   const fieldVariations = deriveFieldNameVariations(configuredTraceIdField);
-  console.log(`[TelemetryCorrelationDashboard] Scanning derived field variations:`, fieldVariations);
-
+  
   for (const variant of fieldVariations) {
     // Check exact match
     if (logRecord[variant]) {
       const value = String(logRecord[variant]);
       if (isValidTraceId(value)) {
-        console.log(`[TelemetryCorrelationDashboard] Found trace_id via derived variant '${variant}':`, value);
         return value;
       }
     }
@@ -1623,7 +1655,6 @@ const extractTraceIdFromLog = (): string | null => {
       if (key.toLowerCase() === lowerVariant && val) {
         const value = String(val);
         if (isValidTraceId(value)) {
-          console.log(`[TelemetryCorrelationDashboard] Found trace_id via case-insensitive match '${key}':`, value);
           return value;
         }
       }
@@ -1636,14 +1667,11 @@ const extractTraceIdFromLog = (): string | null => {
     ? props.ftsFields
     : (store.state.zoConfig?.default_fts_keys || ['body', 'message', 'log', 'msg']);
 
-  console.log(`[TelemetryCorrelationDashboard] Scanning FTS fields for embedded trace_id:`, ftsFieldsToScan);
-
   for (const field of ftsFieldsToScan) {
     // Check exact field name
     if (logRecord[field]) {
       const traceId = extractTraceIdFromText(String(logRecord[field]));
       if (traceId) {
-        console.log(`[TelemetryCorrelationDashboard] Found trace_id embedded in FTS field '${field}':`, traceId);
         return traceId;
       }
     }
@@ -1653,7 +1681,6 @@ const extractTraceIdFromLog = (): string | null => {
       if (key.toLowerCase() === field.toLowerCase() && val) {
         const traceId = extractTraceIdFromText(String(val));
         if (traceId) {
-          console.log(`[TelemetryCorrelationDashboard] Found trace_id embedded in FTS field '${key}':`, traceId);
           return traceId;
         }
       }
@@ -1662,7 +1689,6 @@ const extractTraceIdFromLog = (): string | null => {
 
   // 4. Fallback: Scan ALL string fields for embedded trace_id patterns
   // This catches cases where trace_id is embedded in non-FTS fields
-  console.log("[TelemetryCorrelationDashboard] FTS fields scan failed, scanning all string fields as fallback");
   const scannedFields = new Set(ftsFieldsToScan.map(f => f.toLowerCase()));
 
   for (const [key, val] of Object.entries(logRecord)) {
@@ -1674,13 +1700,11 @@ const extractTraceIdFromLog = (): string | null => {
     if (value.length > 50) { // Only scan longer strings that might be log messages
       const traceId = extractTraceIdFromText(value);
       if (traceId) {
-        console.log(`[TelemetryCorrelationDashboard] Found trace_id embedded in fallback field '${key}':`, traceId);
         return traceId;
       }
     }
   }
 
-  console.log("[TelemetryCorrelationDashboard] No trace_id found in log record after all scans");
   return null;
 };
 
@@ -1728,13 +1752,11 @@ const isValidTraceId = (value: string): boolean => {
  */
 const fetchTraceByTraceId = async (traceId: string) => {
   if (!props.traceStreams?.length) {
-    console.log("[TelemetryCorrelationDashboard] No trace streams available");
     return null;
   }
 
   const streamName = props.traceStreams[0].stream_name;
-  console.log(`[TelemetryCorrelationDashboard] Fetching trace ${traceId} from stream ${streamName}`);
-
+  
   // Use a wider time range when searching by specific trace_id
   // Since we have an exact trace_id, we can search across a larger window (24 hours before to now)
   // The log timestamp might not match the trace timestamp exactly
@@ -1744,13 +1766,6 @@ const fetchTraceByTraceId = async (traceId: string) => {
   // Use the wider range: either 24h before now, or props.timeRange.startTime, whichever is earlier
   const searchStartTime = Math.min(oneDayAgoMicros, props.timeRange.startTime);
   const searchEndTime = nowMicros; // Always search up to now
-
-  console.log(`[TelemetryCorrelationDashboard] Using extended time range for trace lookup:`, {
-    searchStartTime,
-    searchEndTime,
-    propsStartTime: props.timeRange.startTime,
-    propsEndTime: props.timeRange.endTime
-  });
 
   // First, get trace metadata to find time range
   const traceMetaResponse = await searchService.get_traces({
@@ -1764,7 +1779,6 @@ const fetchTraceByTraceId = async (traceId: string) => {
   });
 
   if (!traceMetaResponse.data?.hits?.length) {
-    console.log("[TelemetryCorrelationDashboard] Trace not found via get_traces");
     return null;
   }
 
@@ -1850,7 +1864,6 @@ const findServiceFilter = (filters: Record<string, string> | undefined): { field
  */
 const fetchTracesByDimensions = async () => {
   if (!props.traceStreams?.length) {
-    console.log("[TelemetryCorrelationDashboard] No trace streams available for dimension-based correlation");
     return [];
   }
 
@@ -1888,8 +1901,7 @@ const fetchTracesByDimensions = async () => {
   }
 
   const filter = filterParts.join(' AND ');
-  console.log(`[TelemetryCorrelationDashboard] Fetching traces with filter: ${filter}`);
-
+  
   const response = await searchService.get_traces({
     org_identifier: currentOrgIdentifier.value,
     start_time: props.timeRange.startTime,
@@ -1981,10 +1993,8 @@ const loadCorrelatedTraces = async () => {
       const traceData = await fetchTraceByTraceId(traceId);
       if (traceData && traceData.spans.length > 0) {
         traceSpanList.value = traceData.spans;
-        console.log(`[TelemetryCorrelationDashboard] Loaded ${traceData.spans.length} spans for trace ${traceId}`);
       } else {
         // Trace ID found but no spans - fall back to dimension-based
-        console.log("[TelemetryCorrelationDashboard] Trace not found, falling back to dimension-based");
         traceCorrelationMode.value = 'dimension-based';
         tracesForDimensions.value = await fetchTracesByDimensions();
       }
@@ -1992,10 +2002,8 @@ const loadCorrelatedTraces = async () => {
       // No trace_id found - use dimension-based correlation
       traceCorrelationMode.value = 'dimension-based';
       tracesForDimensions.value = await fetchTracesByDimensions();
-      console.log(`[TelemetryCorrelationDashboard] Loaded ${tracesForDimensions.value.length} traces via dimension correlation`);
     }
   } catch (err: any) {
-    console.error("[TelemetryCorrelationDashboard] Error loading traces:", err);
     tracesError.value = err.message || "Failed to load traces";
     showErrorNotification(tracesError.value);
   } finally {
@@ -2019,20 +2027,15 @@ watch(
 watch(
   () => isOpen.value,
   async (newVal) => {
-    console.log("[TelemetryCorrelationDashboard] isOpen changed:", newVal, "mode:", props.mode);
     if (newVal) {
       // Load semantic groups first (required for applyUnstableDimensionDefaults)
-      console.log("[TelemetryCorrelationDashboard] Loading semantic groups before dashboard...");
       await loadSemanticGroups();
-      console.log("[TelemetryCorrelationDashboard] Semantic groups loaded, count:", semanticGroups.value.length);
 
       // Re-apply defaults now that semantic groups are loaded
       // Check if there are ANY unstable dimensions (either in additionalDimensions OR matchedDimensions with _o2_all_)
       const hasAdditionalDims = Object.keys(props.additionalDimensions || {}).length > 0;
       const hasUnstableInMatched = Object.values(props.matchedDimensions || {}).some(v => v === SELECT_ALL_VALUE);
       if (semanticGroups.value.length > 0 && (hasAdditionalDims || hasUnstableInMatched)) {
-        console.log("[TelemetryCorrelationDashboard] Re-applying unstable dimension defaults after semantic groups loaded");
-        console.log("[TelemetryCorrelationDashboard] hasAdditionalDims:", hasAdditionalDims, "hasUnstableInMatched:", hasUnstableInMatched);
         selectedMetricStreams.value = applyUnstableDimensionDefaults(selectedMetricStreams.value);
       }
 
@@ -2070,14 +2073,12 @@ watch(
     if (isOpen.value && newStreams.length > 0) {
       if (removedStreams.length > 0) {
         // If streams were removed, we need full reload to remove panels
-        console.log("[TelemetryCorrelationDashboard] Streams removed, doing full reload");
         dashboardData.value = null;
         nextTick(() => {
           loadDashboard();
         });
       } else if (addedStreams.length > 0) {
         // If only added, append new panels without regenerating existing ones
-        console.log("[TelemetryCorrelationDashboard] Streams added, appending panels only");
         addMetricPanels(addedStreams);
       }
     }
@@ -2096,7 +2097,6 @@ watch(
       return;
     }
     if (newAdditionalDims && Object.keys(newAdditionalDims).length > 0 && semanticGroups.value.length > 0) {
-      console.log("[TelemetryCorrelationDashboard] additionalDimensions changed, re-applying defaults to metric streams");
       selectedMetricStreams.value = applyUnstableDimensionDefaults(selectedMetricStreams.value);
       if (isOpen.value) {
         loadDashboard();
@@ -2117,7 +2117,6 @@ watch(
     }
     const hasUnstableInMatched = Object.values(newMatchedDims || {}).some(v => v === SELECT_ALL_VALUE);
     if (hasUnstableInMatched && semanticGroups.value.length > 0) {
-      console.log("[TelemetryCorrelationDashboard] matchedDimensions changed with unstable dims, re-applying defaults");
       selectedMetricStreams.value = applyUnstableDimensionDefaults(selectedMetricStreams.value);
       if (isOpen.value) {
         loadDashboard();

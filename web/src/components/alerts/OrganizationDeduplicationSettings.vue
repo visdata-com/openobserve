@@ -15,52 +15,61 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 -->
 
 <template>
-  <div class="tw-w-full org-dedup-settings">
-    <div class="tw-mb-6">
-      <div class="text-h6 tw-mb-2">Alert Correlation</div>
-      <div class="text-body2 text-grey-7">
-        Configure how alerts are correlated and deduplicated across the organization.
-        Alerts with matching fingerprint values will be grouped together.
+  <div class="tw:w-full org-dedup-settings">
+    <div class="tw:mb-6 tw:flex tw:justify-between tw:items-start">
+      <div>
+        <div class="text-h6 tw:mb-2">{{ t('alerts.correlation.title') }}</div>
+        <div class="text-body2 text-grey-7">
+          {{ t('alerts.correlation.description') }}
+        </div>
+        <div class="text-body2 text-grey-6 tw:mt-2 tw:italic">
+          {{ t('alerts.correlation.semanticFieldNote') }}
+        </div>
       </div>
-      <div class="text-body2 text-grey-6 tw-mt-2 tw-italic">
-        Note: Semantic field mappings are configured in the Service Identity tab.
-      </div>
+      <q-btn
+        flat
+        dense
+        color="primary"
+        icon="refresh"
+        :label="t('common.refresh')"
+        @click="loadConfig"
+      />
     </div>
 
-    <q-separator class="tw-mb-6" />
+    <q-separator class="tw:mb-6" />
 
     <!-- Enable Deduplication -->
-    <div class="tw-mb-6">
+    <div class="tw:mb-6">
       <q-checkbox
         v-model="localConfig.enabled"
-        label="Enable Organization-Level Deduplication"
+        :label="t('alerts.correlation.enableOrgLevel')"
         dense
         @update:model-value="emitUpdate"
       >
         <q-tooltip>
-          Enable deduplication and correlation features for all alerts in this organization
+          {{ t('alerts.correlation.enableOrgLevelTooltip') }}
         </q-tooltip>
       </q-checkbox>
     </div>
 
     <!-- Cross-Alert Deduplication -->
-    <div class="tw-mb-6" v-if="localConfig.enabled">
+    <div class="tw:mb-6" v-if="localConfig.enabled">
       <q-checkbox
         v-model="localConfig.alert_dedup_enabled"
-        label="Enable Cross-Alert Deduplication"
+        :label="t('alerts.correlation.enableCrossAlert')"
         dense
         @update:model-value="emitUpdate"
       >
         <q-tooltip>
-          Allow different alerts to deduplicate each other when they share the same fingerprint
+          {{ t('alerts.correlation.enableCrossAlertTooltip') }}
         </q-tooltip>
       </q-checkbox>
     </div>
 
     <!-- Cross-Alert Fingerprint Groups -->
-    <div class="tw-mb-6" v-if="localConfig.alert_dedup_enabled">
-      <div class="tw-font-semibold tw-pb-2 tw-flex tw-items-center">
-        Cross-Alert Fingerprint Groups <span class="tw-text-red-500 tw-ml-1">*</span>
+    <div class="tw:mb-6" v-if="localConfig.alert_dedup_enabled">
+      <div class="tw:font-semibold tw:pb-2 tw:flex tw:items-center">
+        {{ t('alerts.correlation.fingerprintGroups') }} <span class="tw:text-red-500 tw:ml-1">*</span>
         <q-icon
           :name="outlinedInfo"
           size="17px"
@@ -73,15 +82,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             max-width="300px"
             style="font-size: 12px"
           >
-            Select which semantic groups to use for cross-alert fingerprinting.
-            Alerts will be deduplicated if they share the same values for these dimensions.
+            {{ t('alerts.correlation.fingerprintGroupsTooltip') }}
           </q-tooltip>
         </q-icon>
       </div>
-      <div class="tw-text-sm tw-text-gray-600 dark:tw-text-gray-400 tw-mb-2">
-        Select at least one semantic group for cross-alert deduplication
+      <div class="tw:text-sm tw:text-gray-600 dark:tw:text-gray-400 tw:mb-2">
+        {{ t('alerts.correlation.fingerprintGroupsHint') }}
       </div>
-      <div class="tw-flex tw-flex-col tw-gap-2">
+      <div class="tw:flex tw:flex-col tw:gap-2">
         <q-checkbox
           v-for="group in localSemanticGroups"
           :key="group.id"
@@ -92,17 +100,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         />
         <div
           v-if="!localConfig.alert_fingerprint_groups || localConfig.alert_fingerprint_groups.length === 0"
-          class="tw-text-red-500 tw-text-sm tw-mt-1"
+          class="tw:text-red-500 tw:text-sm tw:mt-1"
         >
-          At least one semantic group must be selected
+          {{ t('alerts.correlation.fingerprintGroupsRequired') }}
         </div>
       </div>
     </div>
 
     <!-- Time Window -->
-    <div class="tw-mb-6">
-      <div class="tw-font-semibold tw-pb-2 tw-flex tw-items-center">
-        Default Correlation Window (minutes)
+    <div class="tw:mb-6">
+      <div class="tw:font-semibold tw:pb-2 tw:flex tw:items-center">
+        {{ t('alerts.correlation.defaultWindow') }}
         <q-icon
           :name="outlinedInfo"
           size="17px"
@@ -115,14 +123,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             max-width="300px"
             style="font-size: 12px"
           >
-            In absence of semantic field match, alerts and data from given
-            duration is considered related
+            {{ t('alerts.correlation.defaultWindowTooltip') }}
           </q-tooltip>
         </q-icon>
       </div>
-      <div class="tw-text-sm tw-text-gray-600 dark:tw-text-gray-400 tw-mb-2">
-        In absence of semantic field match, alerts and data from given duration
-        is considered related
+      <div class="tw:text-sm tw:text-gray-600 dark:tw:text-gray-400 tw:mb-2">
+        {{ t('alerts.correlation.defaultWindowDescription') }}
       </div>
       <q-input
         v-model.number="localConfig.time_window_minutes"
@@ -130,7 +136,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         dense
         filled
         min="1"
-        placeholder="Use alert period by default"
+        :placeholder="t('alerts.correlation.defaultWindowPlaceholder')"
         :class="
           store.state.theme === 'dark'
             ? 'input-box-bg-dark input-border-dark'
@@ -140,14 +146,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
       />
     </div>
 
-    <div class="tw-flex tw-justify-end tw-gap-3">
-      <q-btn outline label="Cancel" @click="$emit('cancel')" class="tw-px-4" />
+    <div class="tw:flex tw:justify-end tw:gap-3">
+      <q-btn outline :label="t('alerts.correlation.cancelButton')" @click="$emit('cancel')" class="tw:px-4" />
       <q-btn
-        label="Save Settings"
+        :label="t('alerts.correlation.saveButton')"
         color="primary"
         @click="saveSettings"
         :loading="saving"
-        class="tw-px-4"
+        class="tw:px-4"
       />
     </div>
   </div>
@@ -157,11 +163,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import { ref, watch } from "vue";
 import { useStore } from "vuex";
 import { useQuasar } from "quasar";
+import { useI18n } from "vue-i18n";
 import { outlinedInfo } from "@quasar/extras/material-icons-outlined";
 import alertsService from "@/services/alerts";
 
 const store = useStore();
 const $q = useQuasar();
+const { t } = useI18n();
 
 interface SemanticFieldGroup {
   id: string;
@@ -277,7 +285,6 @@ const loadConfig = async () => {
       // Try to get existing config
       const response = await alertsService.getOrganizationDeduplicationConfig(props.orgId);
       const config = response.data;
-      console.log("Loaded dedup config:", config);
       localConfig.value = {
         enabled: config.enabled ?? true,
         alert_dedup_enabled: config.alert_dedup_enabled ?? true,
@@ -288,13 +295,10 @@ const loadConfig = async () => {
       };
       localSemanticGroups.value = config.semantic_field_groups ?? [];
     } catch (error) {
-      console.log("No existing config, loading default semantic groups from backend", error);
-
       // Load default semantic groups from backend
       try {
         const semanticGroupsResponse = await alertsService.getSemanticGroups(props.orgId);
         const defaultGroups = semanticGroupsResponse.data;
-        console.log(`Loaded ${defaultGroups.length} default semantic groups from backend`);
 
         localConfig.value = {
           enabled: true,
@@ -311,8 +315,6 @@ const loadConfig = async () => {
         localSemanticGroups.value = [];
       }
     }
-  } else {
-    console.log("Using config from props:", props.config);
   }
 };
 
@@ -324,7 +326,6 @@ watch(
   () => props.config,
   (newVal) => {
     if (newVal) {
-      console.log("Config changed from props:", newVal);
       localConfig.value = {
         enabled: newVal.enabled ?? true,
         alert_dedup_enabled: newVal.alert_dedup_enabled ?? true,
@@ -334,8 +335,6 @@ watch(
         fqn_priority_dimensions: newVal.fqn_priority_dimensions,
       };
       localSemanticGroups.value = newVal.semantic_field_groups ?? [];
-      console.log("Updated localConfig:", localConfig.value);
-      console.log("Updated localSemanticGroups:", localSemanticGroups.value);
     }
   },
   { deep: true, immediate: true },

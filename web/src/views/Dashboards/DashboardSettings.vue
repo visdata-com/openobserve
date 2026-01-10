@@ -30,7 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         <q-icon
           data-test="dashboard-settings-close-btn"
           name="cancel"
-          class="cursor-pointer tw-mr-5"
+          class="cursor-pointer tw:mr-5"
           size="20px"
           v-close-popup="true"
         />
@@ -73,7 +73,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         </div>
       </template>
       <template v-slot:after>
-        <div class="q-mx-sm q-my-sm scroll" style="width: 50vw">
+        <div class="q-mx-sm q-my-sm scroll" style="width: 60vw">
           <q-tab-panels
             v-model="activeTab"
             animated

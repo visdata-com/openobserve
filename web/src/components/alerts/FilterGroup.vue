@@ -1,29 +1,29 @@
 <template>
     <!-- Preview Section (only for root level) -->
     <div v-if="depth === 0 && previewString"
-         class="tw-mb-2 tw-p-2 tw-rounded tw-border tw-w-full"
-         :class="store.state.theme === 'dark' ? 'tw-bg-gray-800 tw-border-gray-700' : 'tw-bg-gray-50 tw-border-gray-300'">
-      <div class="tw-flex tw-items-center tw-gap-1 tw-cursor-pointer tw-min-w-0" @click="showPreview = !showPreview">
+         class="tw:mb-2 tw:p-2 tw:rounded tw:border tw:w-full"
+         :class="store.state.theme === 'dark' ? 'tw:bg-gray-800 tw:border-gray-700' : 'tw:bg-gray-50 tw:border-gray-300'">
+      <div class="tw:flex tw:items-center tw:gap-1 tw:cursor-pointer tw:min-w-0" @click="showPreview = !showPreview">
         <q-icon
           :name="showPreview ? 'expand_more' : 'chevron_right'"
           size="16px"
-          class="tw-flex-shrink-0"
-          :class="store.state.theme === 'dark' ? 'tw-text-gray-400' : 'tw-text-gray-600'"
+          class="tw:flex-shrink-0"
+          :class="store.state.theme === 'dark' ? 'tw:text-gray-400' : 'tw:text-gray-600'"
         />
-        <span class="tw-font-medium tw-text-xs tw-flex-shrink-0"
-              :class="store.state.theme === 'dark' ? 'tw-text-gray-300' : 'tw-text-gray-700'">
+        <span class="tw:font-medium tw:text-xs tw:flex-shrink-0"
+              :class="store.state.theme === 'dark' ? 'tw:text-gray-300' : 'tw:text-gray-700'">
           Preview:
         </span>
         <span v-if="showPreview"
-              class="tw-text-[10px] tw-font-mono tw-leading-[1.3] tw-min-w-0 tw-break-words"
-              :class="store.state.theme === 'dark' ? 'tw-text-gray-400' : 'tw-text-gray-600'">
+              class="tw:text-[10px] tw:font-mono tw:leading-[1.3] tw:min-w-0 tw:break-words"
+              :class="store.state.theme === 'dark' ? 'tw:text-gray-400' : 'tw:text-gray-600'">
           {{ previewString }}
         </span>
       </div>
     </div>
 
-    <div :class="[`  tw-px-2 tw-mb-2 el-border tw-mt-6 el-border-radius `,
-        store.state.isAiChatEnabled ? `tw-w-full tw-ml-[${depth * 10}px]` : `xl:tw-w-fit tw-ml-[${depth * 20}px]`
+    <div :class="[`  tw:px-2 tw:mb-2 el-border tw:mt-6 el-border-radius `,
+        store.state.isAiChatEnabled ? `tw:w-full tw:ml-[${depth * 10}px]` : `xl:tw:w-fit tw:ml-[${depth * 20}px]`
     ]"
     :style="{
         opacity: computedOpacity,
@@ -32,23 +32,23 @@
     >
       <!-- V2: Group-level toggle only for nested groups (depth > 0) -->
       <!-- Root group (depth 0) doesn't need toggle - its logicalOperator is dummy -->
-      <div v-if="depth > 0" class="tw-w-fit condition-tabs el-border">
+      <div v-if="depth > 0" class="tw:w-fit condition-tabs el-border">
         <AppTabs
           data-test="scheduled-alert-tabs"
           :tabs="tabOptions"
-          class="tw-h-[20px] custom-tabs-selection-container"
+          class="tw:h-[20px] custom-tabs-selection-container"
           v-model:active-tab="label"
           @update:active-tab="toggleLabel"
         />
       </div>
       <!-- Spacer for root group to maintain consistent spacing -->
-      <div v-else class="tw-h-[14px]"></div>
+      <div v-else class="tw:h-[14px]"></div>
 
       <!-- Group content -->
 
-      <div v-if="isOpen" class="tw-overflow-x-auto group-container" :class="store.state.theme === 'dark' ? 'dark-mode-group' : 'light-mode-group'">
+      <div v-if="isOpen" class="tw:overflow-x-auto group-container" :class="store.state.theme === 'dark' ? 'dark-mode-group' : 'light-mode-group'">
         <!-- Items in group (V2 uses 'conditions' array) -->
-        <div class="tw-ml-2 tw-whitespace-nowrap " v-for="(item, index) in props.group.conditions" :key="index">
+        <div class="tw:ml-2 tw:whitespace-nowrap " v-for="(item, index) in props.group.conditions" :key="index">
           <FilterGroup
             v-if="isGroup(item)"
             :group="item"
@@ -60,12 +60,13 @@
             :stream-fields="props.streamFields"
             :condition-input-width="props.conditionInputWidth"
             :allow-custom-columns="props.allowCustomColumns"
+            :module="props.module"
             @input:update="(name, field) => inputUpdate(name, field)"
           />
           <div
             v-else
-            class="tw-flex tw-items-center tw-gap-2  "
-            :class="store.state.isAiChatEnabled ? 'tw-pl-0' : 'tw-pl-4'"
+            class="tw:flex tw:items-center tw:gap-2  "
+            :class="store.state.isAiChatEnabled ? 'tw:pl-0' : 'tw:pl-4'"
             >
             <FilterCondition
                 :condition="item"
@@ -77,15 +78,16 @@
                 :input-width="props.conditionInputWidth"
                 :is-first-in-group="index === 0"
                 :allow-custom-columns="props.allowCustomColumns"
+                :module="props.module"
             />
-            <div class="tw-mb-3">
+            <div class="tw:mb-3">
                 <q-btn data-test="alert-conditions-delete-condition-btn" icon="close" size="10px" flat border-less @click="removeCondition(item.id)" />
             </div>
                 </div>
         </div>
         <!-- Action buttons -->
 
-        <div class="flex justify-start items-center tw-ml-4"
+        <div class="flex justify-start items-center tw:ml-4"
         >
         <q-btn
             data-test="alert-conditions-add-condition-btn"
@@ -161,6 +163,7 @@
     import { getUUID } from '@/utils/zincutils';
     import AppTabs from '../common/AppTabs.vue';
     import ConfirmDialog from '@/components/ConfirmDialog.vue';
+    import { buildConditionsString } from '@/utils/alerts/conditionsFormatter';
     const props = defineProps({
     group: {
         type: Object,
@@ -193,6 +196,27 @@
         type: Boolean,
         default: false,
         required: false,
+    },
+    showSqlPreview: {
+        type: Boolean,
+        default: false,
+        required: false,
+    },
+    streamFieldsMap: {
+        type: Object,
+        default: () => ({}),
+        required: false,
+    },
+    sqlQuery: {
+        type: String,
+        default: '',
+        required: false,
+    },
+    module: {
+        type: String,
+        default: 'alerts',
+        required: false,
+        validator: (value: string) => ['alerts', 'pipelines'].includes(value),
     },
     });
   
@@ -420,49 +444,33 @@ const computedOpacity = computed(() => {
   return props.depth + 10;
 });
 
-// Build preview string recursively
-const buildPreviewString = (group: any): string => {
-  // V2: Use conditions array instead of items
-  if (!group || !group.conditions || group.conditions.length === 0) {
-    return '';
+// Computed preview string
+// Supports three modes:
+// 1. Display mode (default): lowercase operators, simple formatting, wrapped in parentheses - for pipelines
+// 2. SQL Query mode (when sqlQuery prop provided): shows full SQL query - for alerts
+// 3. WHERE clause mode (when showSqlPreview=true but no sqlQuery): shows just WHERE clause
+const previewString = computed(() => {
+  // Mode 1: Full SQL Query (for alerts with aggregation, etc.)
+  if (props.sqlQuery && props.sqlQuery.trim().length > 0) {
+    return props.sqlQuery;
   }
 
-  const parts: string[] = [];
+  // Mode 2: SQL WHERE clause only (fallback for alerts)
+  if (props.showSqlPreview) {
+    return buildConditionsString(groups.value, {
+      sqlMode: true,              // SQL format (uppercase AND/OR, LIKE operators)
+      addWherePrefix: true,        // Add "WHERE" prefix
+      formatValues: true,          // Type-aware formatting (Int64 no quotes, String with quotes)
+      streamFieldsMap: props.streamFieldsMap,
+    });
+  }
 
-  group.conditions.forEach((item: any, index: number) => {
-    let conditionStr = '';
-
-    if (isGroup(item)) {
-      // Nested group - recursively build its preview
-      const nestedPreview = buildPreviewString(item);
-      if (nestedPreview) {
-        conditionStr = `(${nestedPreview})`;
-      }
-    } else {
-      // Condition - show full condition: column operator value
-      const column = item.column || 'field';
-      const operator = item.operator || '=';
-      const value = item.value !== undefined && item.value !== null && item.value !== ''
-        ? `'${item.value}'`
-        : "''";
-      conditionStr = `${column} ${operator} ${value}`;
-    }
-
-    // Add logical operator before condition (except for first condition)
-    if (index > 0 && item.logicalOperator) {
-      parts.push(`${item.logicalOperator.toLowerCase()} ${conditionStr}`);
-    } else {
-      parts.push(conditionStr);
-    }
+  // Mode 3: Display format (for pipelines)
+  const preview = buildConditionsString(groups.value, {
+    sqlMode: false,            // Display format (lowercase operators)
+    addWherePrefix: false,
+    formatValues: false,       // Simple display format without type-aware formatting
   });
-
-  // Join all parts with spaces (operators are already included)
-  return parts.join(' ');
-};
-
-// Computed preview string
-const previewString = computed(() => {
-  const preview = buildPreviewString(groups.value);
   // Wrap the entire root expression in parentheses
   return preview ? `(${preview})` : '';
 });
