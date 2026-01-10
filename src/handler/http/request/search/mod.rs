@@ -29,7 +29,7 @@ use config::{
         sql::resolve_stream_names,
         stream::StreamType,
     },
-    utils::{base64, json, time::now_micros},
+    utils::{base64, json, time::now_micros, util::DISTINCT_STREAM_PREFIX},
 };
 use error_utils::map_error_to_http_response;
 use hashbrown::HashMap;
@@ -60,7 +60,6 @@ use crate::{
     handler::http::extractors::Headers,
     service::{
         db::enrichment_table,
-        metadata::distinct_values::DISTINCT_STREAM_PREFIX,
         search::{
             self as SearchService, datafusion::plan::projections::get_result_schema,
             sql::visitor::pickup_where::pickup_where, utils::is_permissable_function_error,
@@ -215,7 +214,8 @@ async fn can_use_distinct_stream(
         (status = 500, description = "Failure", content_type = "application/json", body = ()),
     ),
     extensions(
-        ("x-o2-ratelimit" = json!({"module": "Search", "operation": "get"}))
+        ("x-o2-ratelimit" = json!({"module": "Search", "operation": "get"})),
+        ("x-o2-mcp" = json!({"description": "Search data with SQL query, you can use `match_all('something')` to search with full text search, also you can use `str_match(field, 'something')` to search in a specific field"}))
     )
 )]
 #[post("/{org_id}/_search")]
@@ -534,7 +534,8 @@ pub async fn search(
         (status = 500, description = "Failure", content_type = "application/json", body = ()),
     ),
     extensions(
-        ("x-o2-ratelimit" = json!({"module": "Search", "operation": "get"}))
+        ("x-o2-ratelimit" = json!({"module": "Search", "operation": "get"})),
+        ("x-o2-mcp" = json!({"description": "Search logs around a timestamp"}))
     )
 )]
 #[get("/{org_id}/{stream_name}/_around")]
@@ -657,7 +658,8 @@ pub async fn around_v1(
         (status = 500, description = "Failure", content_type = "application/json", body = ()),
     ),
     extensions(
-        ("x-o2-ratelimit" = json!({"module": "Search", "operation": "get"}))
+        ("x-o2-ratelimit" = json!({"module": "Search", "operation": "get"})),
+        ("x-o2-mcp" = json!({"enabled": false}))
     )
 )]
 #[post("/{org_id}/{stream_name}/_around")]
@@ -763,7 +765,8 @@ pub async fn around_v2(
         (status = 500, description = "Failure", content_type = "application/json", body = ()),
     ),
     extensions(
-        ("x-o2-ratelimit" = json!({"module": "Search", "operation": "get"}))
+        ("x-o2-ratelimit" = json!({"module": "Search", "operation": "get"})),
+        ("x-o2-mcp" = json!({"description": "Get distinct values for a field"}))
     )
 )]
 #[get("/{org_id}/{stream_name}/_values")]
@@ -1264,7 +1267,7 @@ async fn values_v1(
             )
         } else {
             format!(
-                "SELECT \"{field}\" AS zo_sql_key, {count_fn} AS zo_sql_num FROM \"{distinct_prefix}{stream_name}\" {sql_where} GROUP BY zo_sql_key ORDER BY zo_sql_num DESC"
+                "SELECT \"{field}\" AS zo_sql_key, {count_fn} AS zo_sql_num FROM \"{distinct_prefix}{stream_name}\" {sql_where} GROUP BY zo_sql_key ORDER BY zo_sql_num DESC, zo_sql_key ASC"
             )
         };
         let mut req = req.clone();
@@ -1427,7 +1430,8 @@ async fn values_v1(
         (status = 500, description = "Failure", content_type = "application/json", body = ()),
     ),
     extensions(
-        ("x-o2-ratelimit" = json!({"module": "Search", "operation": "get"}))
+        ("x-o2-ratelimit" = json!({"module": "Search", "operation": "get"})),
+        ("x-o2-mcp" = json!({"description": "Get search partitions then you can call _search api by partitions to give the result looks faster"}))
     )
 )]
 #[post("/{org_id}/_search_partition")]
@@ -1613,7 +1617,8 @@ pub async fn search_partition(
         (status = 500, description = "Internal Server Error", content_type = "application/json", body = ()),
     ),
     extensions(
-        ("x-o2-ratelimit" = json!({"module": "Search", "operation": "get"}))
+        ("x-o2-ratelimit" = json!({"module": "Search", "operation": "get"})),
+        ("x-o2-mcp" = json!({"description": "Get search history"}))
     )
 )]
 #[post("/{org_id}/_search_history")]

@@ -19,7 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     class="column index-menu"
     :class="store.state.theme == 'dark' ? 'theme-dark' : 'theme-light'"
   >
-    <div class="col-auto tw-mx-[0.625rem]">
+    <div class="col-auto tw:mx-[0.625rem]">
       <!-- stream type selection will be hidden for metrics page -->
       <q-select
         v-if="dashboardPanelDataPageKey !== 'metrics'"
@@ -169,7 +169,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             >
               <div
                 v-if="props?.row?.isGroup"
-                class="tw-pl-2 tw-py-1 tw-font-semibold tw-bg-gray-200"
+                class="tw:pl-2 tw:py-1 tw:font-semibold field-group-header"
               >
                 {{ props?.row?.groupName }}
               </div>
@@ -523,7 +523,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             debounce="1"
             :loading="getStreamFields.isLoading.value"
             :placeholder="t('search.searchField')"
-            class="tw-mx-[0.625rem]"
+            class="tw:mx-[0.625rem]"
            hide-bottom-space>
             <template #prepend>
               <q-icon name="search" />
@@ -553,6 +553,7 @@ import { useLoading } from "@/composables/useLoading";
 import useStreams from "@/composables/useStreams";
 import { inject } from "vue";
 import useNotifications from "@/composables/useNotifications";
+import usePromqlSuggestions from "@/composables/usePromqlSuggestions";
 
 export default defineComponent({
   name: "FieldList",
@@ -623,6 +624,7 @@ export default defineComponent({
     const onDragEnd = () => {
       cleanupDraggingFields();
     };
+    const { parsePromQlQuery } = usePromqlSuggestions();
 
     const metricsIconMapping: any = {
       Summary: "description",
@@ -777,13 +779,40 @@ export default defineComponent({
             // To prevent this, we added the dashboardPanelDataPageKey condition.
             // IMPORTANT: Only set default query if stream or stream_type actually changed
             if (promqlMode.value && dashboardPanelDataPageKey === "metrics") {
-              // set the query
-              dashboardPanelData.data.queries[
-                dashboardPanelData.layout.currentQueryIndex
-              ].query =
+              // Parse query to check if metric name differs from stream name
+              // Only override query if they differ or metric name is null
+              let parsedQuery = null;
+              try {
+                // Parse the query to get the metric name
+                parsedQuery = parsePromQlQuery(
+                  dashboardPanelData.data.queries[
+                    dashboardPanelData.layout.currentQueryIndex
+                  ].query,
+                );
+              } catch (error: any) {
+                console.error("Failed to parse PromQL query:", error);
+                parsedQuery = null;
+              }
+
+              const metricName = parsedQuery?.metricName;
+              const streamName =
                 dashboardPanelData.data.queries[
                   dashboardPanelData.layout.currentQueryIndex
-                ].fields.stream?.toString() + "{}";
+                ].fields.stream;
+
+              // Add guard
+              if (!streamName) {
+                console.warn("Cannot update query: stream name is undefined");
+                return;
+              }
+
+              // Set query if: (1) no metric name exists, OR (2) metric name differs from stream
+              if (!metricName || metricName !== streamName) {
+                // Set the query to the new stream name with curly braces
+                dashboardPanelData.data.queries[
+                  dashboardPanelData.layout.currentQueryIndex
+                ].query = streamName + "{}";
+              }
 
               fetchPromQLLabels(
                 dashboardPanelData.data.queries[
@@ -1298,6 +1327,10 @@ export default defineComponent({
       }
     }
   }
+
+  .field-group-header {
+    background-color: var(--o2-header-menu-bg);
+  }
 }
 
 .theme-light {
@@ -1310,6 +1343,10 @@ export default defineComponent({
         opacity: 1;
       }
     }
+  }
+
+  .field-group-header {
+    background-color: rgb(229,231,235);
   }
 }
 

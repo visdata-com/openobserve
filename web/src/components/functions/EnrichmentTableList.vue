@@ -19,14 +19,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 <template>
   <q-page>
     <div v-if="!showAddJSTransformDialog">
-      <div class="tw-w-full tw-h-full tw-pr-[0.625rem] tw-pb-[0.625rem]">
-        <div class="card-container tw-mb-[0.625rem]">
-          <div class="flex justify-between full-width tw-py-3 tw-px-4 items-center tw-h-[68px]">
-            <div class="q-table__title tw-font-[600]" data-test="enrichment-tables-list-title">
+      <div class="tw:w-full tw:h-full tw:pr-[0.625rem] tw:pb-[0.625rem]">
+        <div class="card-container tw:mb-[0.625rem]">
+          <div class="flex justify-between full-width tw:py-3 tw:px-4 items-center tw:h-[68px]">
+            <div class="q-table__title tw:font-[600]" data-test="enrichment-tables-list-title">
               {{ t("function.enrichmentTables") }}
             </div>
-            <div class="tw-flex tw-items-center q-ml-auto">
-              <div class="app-tabs-container tw-h-[36px] q-mr-sm">
+            <div class="tw:flex tw:items-center q-ml-auto">
+              <div class="app-tabs-container tw:h-[36px] q-mr-sm">
                 <app-tabs
                   data-test="enrichment-tables-list-tabs"
                   class="tabs-selection-container"
@@ -50,7 +50,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                 </template>
               </q-input>
               <q-btn
-                class="q-ml-sm o2-primary-button tw-h-[36px]"
+                class="q-ml-sm o2-primary-button tw:h-[36px]"
                 flat
                 no-caps
                 :label="t(`function.addEnrichmentTable`)"
@@ -59,49 +59,59 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             </div>
           </div>
         </div>
-        <div class="tw-w-full tw-h-full tw-pb-[0.625rem]">
-          <div class="card-container tw-h-[calc(100vh-127px)]">
+        <div class="tw:w-full tw:h-full tw:pb-[0.625rem]">
+          <div class="card-container tw:h-[calc(100vh-127px)]">
             <q-table
               ref="qTable"
               :rows="visibleRows"
               :columns="columns"
-              row-key="id"
+              row-key="name"
               :pagination="pagination"
               :filter="filterQuery"
               style="width: 100%"
               :style="hasVisibleRows
-                  ? 'width: 100%; height: calc(100vh - 127px)' 
+                  ? 'width: 100%; height: calc(100vh - 127px)'
                   : 'width: 100%'"
               class="o2-quasar-table o2-row-md o2-quasar-table-header-sticky "
+              selection="multiple"
+              v-model:selected="selectedEnrichmentTables"
             >
               <template #no-data>
                 <NoData />
               </template>
+              <template v-slot:body-selection="scope">
+                <q-checkbox v-model="scope.selected" size="sm" class="o2-table-checkbox" />
+              </template>
               <template v-slot:body-cell-type="props">
                 <q-td :props="props">
-                  <div class="tw-flex tw-items-center tw-gap-2">
-                    <span v-if="!props.row.urlJob">File</span>
+                  <div class="tw:flex tw:items-center tw:gap-2">
+                    <span v-if="!props.row.urlJobs || props.row.urlJobs.length === 0">File</span>
                     <template v-else>
-                      <span>Url</span>
+                      <span
+                        class="cursor-pointer"
+                        @click="showUrlJobsDialog(props.row)"
+                        :class="{'text-primary': props.row.urlJobs.length > 1}"
+                      >
+                        Url
+                        <span v-if="props.row.urlJobs.length > 1" class="text-grey-7"> ({{ props.row.urlJobs.length }})</span>
+                      </span>
                       <q-icon
-                        v-if="props.row.urlJob.status === 'completed'"
+                        v-if="props.row.aggregateStatus === 'completed'"
                         name="check_circle"
                         color="positive"
                         size="18px"
                       >
                         <q-tooltip>
                           <div style="max-width: 300px;">
-                            <strong>Status: Completed</strong><br/>
-                            Records: {{ props.row.urlJob.total_records_processed.toLocaleString() }}<br/>
-                            Size: {{ formatSizeFromMB((props.row.urlJob.total_bytes_fetched / (1024 * 1024)).toString()) }}<br/>
-                            <template v-if="props.row.urlJob.supports_range">
-                              Resume: Supported<br/>
-                            </template>
+                            <strong>Status: All Completed</strong><br/>
+                            {{ props.row.urlJobs.length }} URL job(s) completed<br/>
+                            <br/>
+                            <em style="font-size: 0.85em;">Click "Url" to see details</em>
                           </div>
                         </q-tooltip>
                       </q-icon>
                       <q-icon
-                        v-else-if="props.row.urlJob.status === 'processing'"
+                        v-else-if="props.row.aggregateStatus === 'processing'"
                         name="sync"
                         color="primary"
                         size="18px"
@@ -110,42 +120,41 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                         <q-tooltip>
                           <div style="max-width: 300px;">
                             <strong>Status: Processing</strong><br/>
-                            Progress: {{ props.row.urlJob.total_records_processed.toLocaleString() }} records<br/>
-                            Downloaded: {{ formatSizeFromMB((props.row.urlJob.total_bytes_fetched / (1024 * 1024)).toString()) }}<br/>
-                            <template v-if="props.row.urlJob.last_byte_position > 0">
-                              Position: {{ formatSizeFromMB((props.row.urlJob.last_byte_position / (1024 * 1024)).toString()) }}<br/>
-                            </template>
-                            Retry: {{ props.row.urlJob.retry_count }} of 3<br/>
-                            <template v-if="props.row.urlJob.supports_range">
-                              Resume: Enabled<br/>
-                            </template>
+                            One or more jobs are currently processing<br/>
                             <br/>
-                            <em style="font-size: 0.85em;">Note: Progress is not real-time. Refresh the page to see latest updates.</em>
+                            <em style="font-size: 0.85em;">Note: Progress is not real-time. Refresh to see latest updates.<br/>Click "Url" for details</em>
                           </div>
                         </q-tooltip>
                       </q-icon>
                       <q-icon
-                        v-else-if="props.row.urlJob.status === 'failed'"
+                        v-else-if="props.row.aggregateStatus === 'failed'"
                         name="warning"
                         color="negative"
                         size="18px"
                         class="cursor-pointer"
-                        @click="showFailedJobDetails(props.row)"
+                        @click="showUrlJobsDialog(props.row)"
                       >
                         <q-tooltip>
                           <div style="max-width: 350px;">
                             <strong>Status: Failed</strong><br/>
-                            Error: Failed after {{ props.row.urlJob.retry_count }} retries<br/>
-                            {{ props.row.urlJob.error_message || 'Unknown error' }}<br/>
-                            <template v-if="props.row.urlJob.last_byte_position > 0">
-                              Progress before failure: {{ formatSizeFromMB((props.row.urlJob.last_byte_position / (1024 * 1024)).toString()) }}<br/>
-                            </template>
-                            <template v-if="props.row.urlJob.supports_range && props.row.urlJob.last_byte_position > 0">
-                              <br/>
-                              <em style="color: #4CAF50;">Resume enabled: Retry will continue from {{ formatSizeFromMB((props.row.urlJob.last_byte_position / (1024 * 1024)).toString()) }}</em><br/>
-                            </template>
+                            One or more jobs have failed<br/>
                             <br/>
-                            Click for full details
+                            Click to see details and retry failed jobs
+                          </div>
+                        </q-tooltip>
+                      </q-icon>
+                      <q-icon
+                        v-else-if="props.row.aggregateStatus === 'pending'"
+                        name="schedule"
+                        color="grey-7"
+                        size="18px"
+                      >
+                        <q-tooltip>
+                          <div style="max-width: 300px;">
+                            <strong>Status: Pending</strong><br/>
+                            Job(s) waiting to be processed<br/>
+                            <br/>
+                            <em style="font-size: 0.85em;">Click "Url" for details</em>
                           </div>
                         </q-tooltip>
                       </q-icon>
@@ -155,22 +164,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
               </template>
               <template v-slot:body-cell-actions="props">
                 <q-td :props="props">
-                  <!-- Retry button - only for failed URL jobs -->
-                  <q-btn
-                    v-if="props.row.urlJob && props.row.urlJob.status === 'failed'"
-                    icon="refresh"
-                    :title="'Retry'"
-                    padding="sm"
-                    unelevated
-                    size="sm"
-                    round
-                    flat
-                    @click="retryUrlJob(props.row)"
-                  />
-
                   <!-- Search button - show for uploaded tables or completed URL jobs -->
                   <q-btn
-                    v-if="!props.row.urlJob || props.row.urlJob.status === 'completed'"
+                    v-if="!props.row.urlJobs || props.row.urlJobs.length === 0 || props.row.aggregateStatus === 'completed'"
                     :data-test="`${props.row.name}-explore-btn`"
                     :title="t('logStream.explore')"
                     padding="sm"
@@ -184,7 +180,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
                   <!-- Schema Settings button - show for uploaded tables or completed URL jobs -->
                   <q-btn
-                    v-if="!props.row.urlJob || props.row.urlJob.status === 'completed'"
+                    v-if="!props.row.urlJobs || props.row.urlJobs.length === 0 || props.row.aggregateStatus === 'completed'"
                     icon="list_alt"
                     :title="t('logStream.schemaHeader')"
                     padding="sm"
@@ -195,9 +191,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                     @click="listSchema(props)"
                   />
 
-                  <!-- Edit button - show for uploaded tables, completed URL jobs, or failed URL jobs (to fix URL) -->
+                  <!-- Edit button - show for uploaded tables, completed URL jobs, or failed URL jobs (to add more URLs) -->
                   <q-btn
-                    v-if="!props.row.urlJob || props.row.urlJob.status === 'completed' || props.row.urlJob.status === 'failed'"
+                    v-if="!props.row.urlJobs || props.row.urlJobs.length === 0 || props.row.aggregateStatus === 'completed' || props.row.aggregateStatus === 'failed'"
                     padding="sm"
                     unelevated
                     size="sm"
@@ -234,22 +230,50 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
               </template>
 
               <template #bottom="scope">
-                <div class="tw-flex tw-items-center tw-justify-end tw-w-full tw-h-[48px]">
-                  <div class="o2-table-footer-title tw-flex tw-items-center tw-w-[200px] tw-mr-md">
-                    {{ resultTotal }} {{ t('function.enrichmentTables') }}
+                <div class="tw:flex tw:items-center tw:justify-between tw:w-full tw:h-[48px]">
+                  <div class="tw:flex tw:items-center tw:gap-2">
+                    <div class="o2-table-footer-title tw:flex tw:items-center tw:w-[200px] tw:mr-md">
+                      {{ resultTotal }} {{ t('function.enrichmentTables') }}
+                    </div>
+                    <q-btn
+                      v-if="selectedEnrichmentTables.length > 0"
+                      data-test="enrichment-tables-bulk-delete-btn"
+                      class="flex items-center q-mr-sm no-border o2-secondary-button tw:h-[36px]"
+                      :class="
+                        store.state.theme === 'dark'
+                          ? 'o2-secondary-button-dark'
+                          : 'o2-secondary-button-light'
+                      "
+                      no-caps
+                      dense
+                      @click="openBulkDeleteDialog"
+                    >
+                      <q-icon name="delete" size="16px" />
+                      <span class="tw:ml-2">Delete</span>
+                    </q-btn>
                   </div>
-                <QTablePagination
-                  :scope="scope"
-                  :position="'bottom'"
-                  :resultTotal="resultTotal"
-                  :perPageOptions="perPageOptions"
-                  @update:changeRecordPerPage="changePagination"
-                />
+                  <QTablePagination
+                    :scope="scope"
+                    :position="'bottom'"
+                    :resultTotal="resultTotal"
+                    :perPageOptions="perPageOptions"
+                    @update:changeRecordPerPage="changePagination"
+                  />
                 </div>
               </template>
               <template v-slot:header="props">
                   <q-tr :props="props">
-                    <!-- Rendering the of the columns -->
+                    <!-- Adding this block to render the select-all checkbox -->
+                    <q-th v-if="columns.length > 0" auto-width>
+                      <q-checkbox
+                        v-model="props.selected"
+                        size="sm"
+                        :class="store.state.theme === 'dark' ? 'o2-table-checkbox-dark' : 'o2-table-checkbox-light'"
+                        class="o2-table-checkbox"
+                      />
+                    </q-th>
+
+                    <!-- Rendering the rest of the columns -->
                     <!-- here we can add the classes class so that the head will be sticky -->
                     <q-th
                       v-for="col in props.cols"
@@ -282,6 +306,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
       @update:cancel="confirmDelete = false"
       v-model="confirmDelete"
     />
+    <ConfirmDialog
+      title="Bulk Delete Enrichment Tables"
+      :message="`Are you sure you want to delete ${selectedEnrichmentTables.length} enrichment table(s)?`"
+      @update:ok="bulkDeleteEnrichmentTables"
+      @update:cancel="confirmBulkDelete = false"
+      v-model="confirmBulkDelete"
+    />
     <q-dialog
       v-model="showEnrichmentSchema"
       position="right"
@@ -289,6 +320,50 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
       maximized
     >
       <EnrichmentSchema :selectedEnrichmentTable="selectedEnrichmentTable" />
+    </q-dialog>
+
+    <!-- URL Jobs Dialog -->
+    <q-dialog
+      v-model="showUrlJobsDialogState"
+      position="right"
+      full-height
+      maximized
+    >
+      <q-card style="width: 600px; max-width: 80vw;">
+        <q-card-section class="row items-center q-pb-none">
+          <div class="text-h6">URL Jobs for {{ selectedTableForUrlJobs?.name }}</div>
+          <q-space />
+          <q-btn icon="close" flat round dense v-close-popup />
+        </q-card-section>
+
+        <q-card-section>
+          <div v-if="selectedTableForUrlJobs?.urlJobs && selectedTableForUrlJobs.urlJobs.length > 0">
+            <q-list separator>
+              <q-item v-for="(job, index) in selectedTableForUrlJobs.urlJobs" :key="job.id" class="q-pa-md">
+                <q-item-section>
+                  <q-item-label class="text-weight-bold">Job {{ index + 1 }}</q-item-label>
+                  <q-item-label caption>{{ job.url }}</q-item-label>
+                  <q-item-label caption class="q-mt-sm">
+                    <q-badge :color="job.status === 'completed' ? 'positive' : job.status === 'failed' ? 'negative' : job.status === 'processing' ? 'primary' : 'grey'">
+                      {{ job.status }}
+                    </q-badge>
+                  </q-item-label>
+                  <q-item-label caption v-if="job.status === 'completed'" class="q-mt-sm">
+                    Records: {{ job.total_records_processed?.toLocaleString() }}<br/>
+                    Size: {{ job.total_bytes_fetched ? formatSizeFromMB(((job.total_bytes_fetched / 1024 / 1024).toFixed(2))) : '0 MB' }}
+                  </q-item-label>
+                  <q-item-label caption v-if="job.status === 'failed'" class="q-mt-sm text-negative">
+                    Error: {{ job.error_message }}
+                  </q-item-label>
+                </q-item-section>
+              </q-item>
+            </q-list>
+          </div>
+          <div v-else class="text-center q-pa-md text-grey-7">
+            No URL jobs found
+          </div>
+        </q-card-section>
+      </q-card>
     </q-dialog>
   </q-page>
 </template>
@@ -345,7 +420,11 @@ export default defineComponent({
     const selectedDelete: any = ref(null);
     const isUpdated: any = ref(false);
     const confirmDelete = ref<boolean>(false);
+    const confirmBulkDelete = ref<boolean>(false);
+    const selectedEnrichmentTables = ref<any[]>([]);
     const showEnrichmentSchema = ref<boolean>(false);
+    const showUrlJobsDialogState = ref<boolean>(false);
+    const selectedTableForUrlJobs = ref<any>(null);
     const filterQuery = ref("");
     const { track } = useReo();
     const columns: any = ref<QTableProps["columns"]>([
@@ -365,10 +444,11 @@ export default defineComponent({
       },
       {
         name: "type",
-        field: "type",
+        field: (row: any) => (row.urlJobs && row.urlJobs.length > 0) ? "Url" : "File",
         label: "Type",
         align: "left",
         sortable: true,
+        sort: (a: string, b: string) => a.localeCompare(b),
         style: "width: 150px",
       },
       {
@@ -466,9 +546,28 @@ export default defineComponent({
           streamMap.set(stream.name, stream);
         });
 
-        // Combine streams with URL jobs
+        // Combine streams with URL jobs (now arrays)
         const allTables = new Map();
         let counter = 1;
+
+        // Helper function to compute aggregate status from URL jobs array
+        const computeAggregateStatus = (urlJobs: any[]) => {
+          if (!urlJobs || urlJobs.length === 0) return null;
+
+          // If any job is failed, aggregate status is failed
+          if (urlJobs.some((job: any) => job.status === 'failed')) return 'failed';
+
+          // If any job is processing, aggregate status is processing
+          if (urlJobs.some((job: any) => job.status === 'processing')) return 'processing';
+
+          // If any job is pending, aggregate status is pending
+          if (urlJobs.some((job: any) => job.status === 'pending')) return 'pending';
+
+          // If all jobs are completed, aggregate status is completed
+          if (urlJobs.every((job: any) => job.status === 'completed')) return 'completed';
+
+          return 'pending';
+        };
 
         // Add all streams
         res.list.forEach((data: any) => {
@@ -486,7 +585,7 @@ export default defineComponent({
             original_compressed_size = data.stats.compressed_size;
           }
 
-          const urlJob = urlJobMap[data.name] || null;
+          const urlJobs = urlJobMap[data.name] || [];
 
           allTables.set(data.name, {
             "#": counter <= 9 ? `0${counter++}` : counter++,
@@ -499,12 +598,13 @@ export default defineComponent({
             original_compressed_size: original_compressed_size,
             actions: "action buttons",
             stream_type: data.stream_type,
-            urlJob: urlJob,
+            urlJobs: urlJobs,
+            aggregateStatus: computeAggregateStatus(urlJobs),
           });
         });
 
         // Add URL jobs that don't have schemas yet (pending/processing)
-        Object.entries(urlJobMap).forEach(([tableName, urlJob]: [string, any]) => {
+        Object.entries(urlJobMap).forEach(([tableName, urlJobs]: [string, any]) => {
           if (!allTables.has(tableName)) {
             // This is a URL job without a schema yet
             allTables.set(tableName, {
@@ -518,7 +618,8 @@ export default defineComponent({
               original_compressed_size: "",
               actions: "action buttons",
               stream_type: "enrichment_tables",
-              urlJob: urlJob,
+              urlJobs: urlJobs,
+              aggregateStatus: computeAggregateStatus(urlJobs),
             });
           }
         });
@@ -557,15 +658,15 @@ export default defineComponent({
 
     const filterTabs = reactive([
       {
-        label: "All",
+        label: t("function.filterAll"),
         value: "all",
       },
       {
-        label: "File",
+        label: t("function.filterFile"),
         value: "uploaded",
       },
       {
-        label: "Url",
+        label: t("function.filterUrl"),
         value: "file_url",
       },
     ]);
@@ -690,6 +791,71 @@ export default defineComponent({
       });
     };
 
+    const openBulkDeleteDialog = () => {
+      confirmBulkDelete.value = true;
+    };
+
+    const bulkDeleteEnrichmentTables = () => {
+      const selectedItems = selectedEnrichmentTables.value;
+      const promises: Promise<any>[] = [];
+
+      selectedItems.forEach((table: any) => {
+        promises.push(
+          streamService.delete(
+            store.state.selectedOrganization.identifier,
+            table.name,
+            "enrichment_tables",
+          ),
+        );
+      });
+
+      Promise.allSettled(promises)
+        .then((results) => {
+          let successfulDeletions = 0;
+          let failedDeletions = 0;
+
+          results.forEach((result) => {
+            if (result.status === 'fulfilled') {
+              // Check if the response indicates success
+              if (result.value?.data?.code === 200) {
+                successfulDeletions++;
+              } else {
+                failedDeletions++;
+              }
+            } else {
+              // Handle rejected promises (errors)
+              const error = result.reason;
+              // Don't count 403 errors as failures (silent)
+              if (error?.response?.status !== 403 && error?.status !== 403) {
+                failedDeletions++;
+              }
+            }
+          });
+
+          if (successfulDeletions > 0 && failedDeletions === 0) {
+            $q.notify({
+              color: "positive",
+              message: `Successfully deleted ${successfulDeletions} enrichment table(s).`,
+            });
+          } else if (successfulDeletions > 0 && failedDeletions > 0) {
+            $q.notify({
+              color: "warning",
+              message: `Deleted ${successfulDeletions} enrichment table(s). Failed to delete ${failedDeletions} enrichment table(s).`,
+            });
+          } else if (failedDeletions > 0) {
+            $q.notify({
+              color: "negative",
+              message: `Failed to delete ${failedDeletions} enrichment table(s).`,
+            });
+          }
+
+          resetStreamType("enrichment_tables");
+          getLookupTables(true);
+          selectedEnrichmentTables.value = [];
+          confirmBulkDelete.value = false;
+        });
+    };
+
     const showDeleteDialogFn = (props: any) => {
       selectedDelete.value = props.row;
       confirmDelete.value = true;
@@ -766,64 +932,9 @@ export default defineComponent({
       showEnrichmentSchema.value = true;
     };
 
-    const showFailedJobDetails = (row: any) => {
-      $q.dialog({
-        title: 'Enrichment Table Job Details',
-        message: `
-          <div><strong>Table Name:</strong> ${row.name}</div>
-          <div><strong>Source URL:</strong> ${row.urlJob?.url || 'N/A'}</div>
-          <div><strong>Status:</strong> Failed</div>
-          <div><strong>Retry Count:</strong> ${row.urlJob?.retry_count || 0} of 3</div>
-          <br/>
-          <div><strong>Error Details:</strong></div>
-          <div>${row.urlJob?.error_message || 'Unknown error'}</div>
-        `,
-        html: true,
-        ok: {
-          label: 'Close',
-          flat: true,
-        },
-      });
-    };
-
-    const retryUrlJob = (row: any) => {
-      $q.dialog({
-        title: 'Retry Job',
-        message: 'Retry fetching data from this URL?',
-        cancel: true,
-        persistent: true,
-      }).onOk(() => {
-        const dismiss = $q.notify({
-          spinner: true,
-          message: "Creating retry job...",
-        });
-
-        jsTransformService
-          .create_enrichment_table_from_url(
-            store.state.selectedOrganization.identifier,
-            row.name,
-            row.urlJob.url,
-            row.urlJob.append_data
-          )
-          .then(() => {
-            dismiss();
-            $q.notify({
-              type: "positive",
-              message: "Retry job started. Processing in background...",
-            });
-            resetStreamType("enrichment_tables");
-            getLookupTables(true);
-          })
-          .catch((err: any) => {
-            dismiss();
-            if (err.response?.status != 403) {
-              $q.notify({
-                type: "negative",
-                message: err.response?.data?.message || "Failed to create retry job",
-              });
-            }
-          });
-      });
+    const showUrlJobsDialog = (row: any) => {
+      selectedTableForUrlJobs.value = row;
+      showUrlJobsDialogState.value = true;
     };
 
     const filterData = (rows: any, terms: any) => {
@@ -842,9 +953,9 @@ export default defineComponent({
 
       // Apply type filter
       if (selectedFilter.value === 'uploaded') {
-        rows = rows.filter((row: any) => !row.urlJob);
+        rows = rows.filter((row: any) => !row.urlJobs || row.urlJobs.length === 0);
       } else if (selectedFilter.value === 'file_url') {
-        rows = rows.filter((row: any) => row.urlJob);
+        rows = rows.filter((row: any) => row.urlJobs && row.urlJobs.length > 0);
       }
 
       // Apply search filter
@@ -894,9 +1005,14 @@ export default defineComponent({
       getTimeRange,
       visibleRows,
       hasVisibleRows,
+      confirmBulkDelete,
+      selectedEnrichmentTables,
+      openBulkDeleteDialog,
+      bulkDeleteEnrichmentTables,
       selectedFilter,
-      showFailedJobDetails,
-      retryUrlJob,
+      showUrlJobsDialog,
+      showUrlJobsDialogState,
+      selectedTableForUrlJobs,
       formatSizeFromMB,
       filterTabs,
       updateActiveTab,
@@ -946,4 +1062,6 @@ export default defineComponent({
     transform: rotate(360deg);
   }
 }
+
+/* No custom styles needed - using Quasar components */
 </style>

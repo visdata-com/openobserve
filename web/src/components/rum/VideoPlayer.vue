@@ -18,13 +18,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
   <div class="player-container full-height q-pa-sm">
     <div
       v-if="isLoading"
-      class="q-pb-lg flex items-center justify-center text-center full-width tw-h-[calc(100vh-12.5rem)]"
+      class="q-pb-lg flex items-center justify-center text-center full-width tw:h-[calc(100vh-12.5rem)]"
     >
       <div>
         <q-spinner-hourglass
           color="primary"
           size="2.5rem"
-          class="tw-mx-auto tw-block"
+          class="tw:mx-auto tw:block"
         />
         <div class="text-center full-width">
           Hold on tight, we're fetching session.
@@ -33,7 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     </div>
     <div
       ref="playerContainerRef"
-      class="flex items-center justify-center tw-h-[calc(100vh-12.375rem)]"
+      class="flex items-center justify-center tw:h-[calc(100vh-12.375rem)]"
     >
       <div
         ref="playerRef"
@@ -72,20 +72,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         <div
           v-for="event in events as any[]"
           :key="event.id"
-          class="progressTime bg-secondary absolute cursor-pointer"
+          class="progressTime absolute cursor-pointer"
+          :class="getEventMarkerClass(event)"
           :style="{
-            width: '2px',
+            width: event.frustration_types && event.frustration_types.length > 0 ? '3px' : '2px',
             left:
               (event.relativeTime / playerState.totalTime) * playerState.width +
               'px',
             bottom: '-0.3125rem',
-            height: '0.9375rem',
+            height: event.frustration_types && event.frustration_types.length > 0 ? '1.125rem' : '0.9375rem',
           }"
-          :title="
-            event.name.length > 100
-              ? event.name.slice(0, 100) + '...'
-              : event.name
-          "
+          :title="getEventTooltip(event)"
         />
       </div>
       <div class="controls flex justify-between items-center">
@@ -94,7 +91,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             <q-icon
               name="replay_10"
               size="1.5rem"
-              class="q-mr-sm cursor-pointer tw-text-[var(--o2-icon-color-dark)] hover:tw-text-[var(--o2-primary-btn-bg)]"
+              class="q-mr-sm cursor-pointer tw:text-[var(--o2-icon-color-dark)] hover:tw:text-[var(--o2-primary-btn-bg)]"
               @click="skipTo('backward')"
             />
             <q-icon
@@ -104,13 +101,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                   : 'play_circle_filled'
               "
               size="2rem"
-              class="cursor-pointer tw-text-[var(--o2-icon-color-dark)] hover:tw-text-[var(--o2-primary-btn-bg)]"
+              class="cursor-pointer tw:text-[var(--o2-icon-color-dark)] hover:tw:text-[var(--o2-primary-btn-bg)]"
               @click="togglePlay"
             />
             <q-icon
               name="forward_10"
               size="1.5rem"
-              class="q-ml-sm cursor-pointer tw-text-[var(--o2-icon-color-dark)] hover:tw-text-[var(--o2-primary-btn-bg)]"
+              class="q-ml-sm cursor-pointer tw:text-[var(--o2-icon-color-dark)] hover:tw:text-[var(--o2-primary-btn-bg)]"
               @click="skipTo('forward')"
             />
           </div>
@@ -435,6 +432,31 @@ const setupSession = async () => {
   player.value.triggerResize();
 };
 
+const getEventMarkerClass = (event: any) => {
+  if (event.frustration_types && event.frustration_types.length > 0) {
+    return 'bg-frustration-marker';
+  }
+  if (event.type === 'error') {
+    return 'bg-red-5';
+  }
+  return 'bg-secondary';
+};
+
+const getEventTooltip = (event: any) => {
+  const eventName = event.name.length > 100
+    ? event.name.slice(0, 100) + '...'
+    : event.name;
+
+  if (event.frustration_types && event.frustration_types.length > 0) {
+    const frustrationLabels = event.frustration_types.map((type: string) => {
+      return type.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
+    }).join(', ');
+    return `⚠️ FRUSTRATION: ${frustrationLabels}\n${eventName}`;
+  }
+
+  return eventName;
+};
+
 function formatTimeDifference(milliSeconds: number) {
   // Calculate hours, minutes, and seconds
   let hours: string | number = Math.floor(milliSeconds / (1000 * 60 * 60));
@@ -524,8 +546,6 @@ const initializeWorker = () => {
       new URL("../../workers/rumcssworker.js", import.meta.url),
       { type: "module" },
     );
-
-    console.log("Worker created successfully.");
   } else {
     console.error("Web Workers are not supported in this browser.");
   }
@@ -573,6 +593,11 @@ defineExpose({
   width: 100%;
   height: 0.3125rem;
   background-color: #ebebeb;
+}
+
+.bg-frustration-marker {
+  background-color: #fb923c !important;
+  box-shadow: 0 0 4px rgba(251, 146, 60, 0.6);
 }
 </style>
 

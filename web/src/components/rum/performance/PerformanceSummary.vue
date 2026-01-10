@@ -20,7 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
   <div class="relative-position">
     <div
       class="performance-dashboard"
-      :class="isLoading.length ? 'tw-invisible' : 'tw-visible'"
+      :class="isLoading.length ? 'tw:invisible' : 'tw:visible'"
     >
       <RenderDashboardCharts
         ref="performanceChartsRef"
@@ -28,16 +28,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         :dashboardData="currentDashboardData.data"
         :currentTimeObj="dateTime"
         searchType="RUM"
+        @variablesManagerReady="onVariablesManagerReady"
       >
         <template v-slot:before_panels>
           <div class="flex items-center q-pb q-pt-md text-subtitle1 text-bold">
-            <div class="text-center tw-w-[25%]">
+            <div class="text-center tw:w-[25%]">
               {{ t("rum.webVitalsLabel") }}
             </div>
-            <div class="text-center tw-w-[25%]">
+            <div class="text-center tw:w-[25%]">
               {{ t("rum.errorLabel") }}
             </div>
-            <div class="text-center tw-w-[25%]">
+            <div class="text-center tw:w-[25%]">
               {{ t("rum.sessionLabel") }}
             </div>
           </div>
@@ -46,13 +47,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     </div>
     <div
       v-show="isLoading.length"
-      class="q-pb-lg flex items-center justify-center text-center absolute full-width tw-h-[calc(100vh-15.625rem)] tw-top-0"
+      class="q-pb-lg flex items-center justify-center text-center absolute full-width tw:h-[calc(100vh-15.625rem)] tw:top-0"
     >
       <div>
         <q-spinner-hourglass
           color="primary"
           size="2.5rem"
-          class="tw-mx-auto tw-block"
+          class="tw:mx-auto tw:block"
         />
         <div class="text-center full-width">Loading Dashboard</div>
       </div>
@@ -94,7 +95,8 @@ export default defineComponent({
       default: () => ({}),
     },
   },
-  setup() {
+  emits: ["variablesManagerReady"],
+  setup(props, { emit }) {
     // onMounted(async () => {
     //   await loadDashboard();
     // });
@@ -307,6 +309,11 @@ export default defineComponent({
       await loadDashboard();
     };
 
+    // Variables manager event handler - pass through to parent
+    const onVariablesManagerReady = (manager: any) => {
+      emit("variablesManagerReady", manager);
+    };
+
     return {
       currentDashboardData,
       goBackToDashboardList,
@@ -322,7 +329,7 @@ export default defineComponent({
       refreshData,
       onDeletePanel,
       variablesData,
-      variablesDataUpdated,
+      onVariablesManagerReady,
       showDashboardSettingsDialog,
       openSettingsDialog,
       loadDashboard,

@@ -48,7 +48,7 @@ pub struct Model {
     #[sea_orm(column_type = "String(StringLen::N(128))")]
     pub org_id: String,
 
-    #[sea_orm(column_type = "String(StringLen::N(2048))")]
+    #[sea_orm(column_type = "String(StringLen::N(512))")]
     pub service_key: String,
 
     /// Correlation key (hash of stable dimensions only)
@@ -90,7 +90,9 @@ impl RelationTrait for Relation {
 
 impl ActiveModelBehavior for ActiveModel {}
 
-#[derive(FromQueryResult, Debug, Serialize, Deserialize)]
+/// Service record for cross-region synchronization.
+/// Clone is required for super-cluster queue message serialization.
+#[derive(FromQueryResult, Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceRecord {
     pub org_id: String,
     pub service_key: String,

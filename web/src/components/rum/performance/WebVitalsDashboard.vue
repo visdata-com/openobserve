@@ -20,7 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
   <q-page class="relative-position">
     <div
       class="performance-dashboard"
-      :class="isLoading.length ? 'tw-invisible' : 'tw-visible'"
+      :class="isLoading.length ? 'tw:invisible' : 'tw:visible'"
     >
       <div
         class="text-bold q-ml-md q-px-sm rounded q-mt-sm q-py-xs learn-web-vitals-link flex items-center"
@@ -48,17 +48,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         :dashboardData="currentDashboardData.data"
         :currentTimeObj="dateTime"
         searchType="RUM"
+        @variablesManagerReady="onVariablesManagerReady"
       />
     </div>
     <div
       v-show="isLoading.length"
-      class="q-pb-lg flex items-center justify-center text-center absolute full-width tw-h-[calc(100vh-15.625rem)] tw-top-0"
+      class="q-pb-lg flex items-center justify-center text-center absolute full-width tw:h-[calc(100vh-15.625rem)] tw:top-0"
     >
       <div>
         <q-spinner-hourglass
           color="primary"
           size="2.5rem"
-          class="tw-mx-auto tw-block"
+          class="tw:mx-auto tw:block"
         />
         <div class="text-center full-width">Loading Dashboard</div>
       </div>
@@ -104,7 +105,8 @@ export default defineComponent({
       default: () => ({}),
     },
   },
-  setup() {
+  emits: ["variablesManagerReady"],
+  setup(props, { emit }) {
     const { t } = useI18n();
     const route = useRoute();
     const router = useRouter();
@@ -123,10 +125,9 @@ export default defineComponent({
     const webVitalsChartsRef = ref(null);
     const isLoading: Ref<boolean[]> = ref([]);
 
-    // variables data
-    const variablesData = reactive({});
-    const variablesDataUpdated = (data: any) => {
-      Object.assign(variablesData, data);
+    // Variables manager event handler - pass through to parent
+    const onVariablesManagerReady = (manager: any) => {
+      emit("variablesManagerReady", manager);
     };
 
     onMounted(async () => {
@@ -253,8 +254,7 @@ export default defineComponent({
       selectedDate,
       viewOnly,
       eventLog,
-      variablesData,
-      variablesDataUpdated,
+      onVariablesManagerReady,
       addSettingsData,
       showDashboardSettingsDialog,
       loadDashboard,

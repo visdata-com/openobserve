@@ -41,6 +41,113 @@ class EnrichmentPage {
         // Append data locators
         this.enrichmentTablesButton = 'Enrichment Tables';
         this.appendDataToggle = 'Append data to existing';
+
+        // UI Regression locators
+        this.enrichmentTabText = 'text=/enrichment.*table/i';
+        this.quasarTable = '.o2-quasar-table';
+        this.helpMenuItem = '[data-test="menu-link-help-item"]';
+        this.openApiMenuItem = 'text=/openapi/i';
+    }
+
+    // ============================================================================
+    // REGRESSION TEST POM METHODS
+    // ============================================================================
+
+    /**
+     * Click the enrichment tab by text pattern
+     * @returns {Promise<boolean>} True if click succeeded
+     */
+    async clickEnrichmentTabByText() {
+        const enrichmentTab = this.page.locator(this.enrichmentTabText).first();
+        const isVisible = await enrichmentTab.isVisible().catch(() => false);
+        if (isVisible) {
+            await enrichmentTab.click();
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Check if enrichment tab text is visible
+     * @returns {Promise<boolean>} True if visible
+     */
+    async isEnrichmentTabVisible() {
+        const enrichmentTab = this.page.locator(this.enrichmentTabText).first();
+        return await enrichmentTab.isVisible().catch(() => false);
+    }
+
+    /**
+     * Check if enrichment tables search input is visible
+     * @returns {Promise<boolean>} True if visible
+     */
+    async isEnrichmentSearchInputVisible() {
+        const searchInput = this.page.locator(this.enrichmentTablesSearchInput);
+        return await searchInput.isVisible().catch(() => false);
+    }
+
+    /**
+     * Get the quasar table bounding box if visible
+     * @returns {Promise<{width: number, height: number}|null>} Bounding box or null
+     */
+    async getQuasarTableDimensions() {
+        const table = this.page.locator(this.quasarTable).first();
+        const isVisible = await table.isVisible().catch(() => false);
+        if (isVisible) {
+            return await table.boundingBox();
+        }
+        return null;
+    }
+
+    /**
+     * Check if quasar table is visible
+     * @returns {Promise<boolean>} True if visible
+     */
+    async isQuasarTableVisible() {
+        const table = this.page.locator(this.quasarTable).first();
+        return await table.isVisible().catch(() => false);
+    }
+
+    /**
+     * Take screenshot of quasar table
+     * @param {string} filename - The filename to save screenshot
+     */
+    async screenshotQuasarTable(filename) {
+        const table = this.page.locator(this.quasarTable).first();
+        if (await table.isVisible().catch(() => false)) {
+            await table.screenshot({ path: filename });
+        }
+    }
+
+    /**
+     * Click help menu item
+     */
+    async clickHelpMenuItem() {
+        const helpButton = this.page.locator(this.helpMenuItem);
+        await helpButton.waitFor({ state: 'visible', timeout: 10000 });
+        await helpButton.click();
+    }
+
+    /**
+     * Click OpenAPI menu item if visible
+     * @returns {Promise<boolean>} True if click succeeded
+     */
+    async clickOpenApiMenuItemIfVisible() {
+        const openApiMenuItem = this.page.locator(this.openApiMenuItem).first();
+        const isVisible = await openApiMenuItem.isVisible().catch(() => false);
+        if (isVisible) {
+            await openApiMenuItem.click();
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Check if OpenAPI menu item is visible
+     * @returns {Promise<boolean>} True if visible
+     */
+    async isOpenApiMenuItemVisible() {
+        const openApiMenuItem = this.page.locator(this.openApiMenuItem).first();
+        return await openApiMenuItem.isVisible().catch(() => false);
     }
 
     // Navigation Methods
@@ -589,15 +696,21 @@ abc, err = get_enrichment_table_record("${fileName}", {
     }
 
     async searchEnrichmentTableInList(tableName) {
-        // First ensure the enrichment tables list is visible
-        await this.page.locator('[data-test="enrichment-tables-list-title"]').waitFor({ state: 'visible', timeout: 30000 });
+        // Wait for page to stabilize
         await this.page.waitForLoadState('networkidle');
 
         // Use getByPlaceholder which works reliably with Quasar q-input components
+        // Directly wait for search input instead of title - search input visibility indicates page is ready
         const searchInput = this.page.getByPlaceholder(/search enrichment table/i);
-        await searchInput.waitFor({ state: 'visible', timeout: 15000 });
+        await searchInput.waitFor({ state: 'visible', timeout: 30000 });
+
+        // Fill the search input with table name to filter results
         await searchInput.fill(tableName);
         await this.page.waitForLoadState('networkidle');
+
+        // Wait for filtered results to appear - look for table row containing the searched name
+        const tableRow = this.page.locator('tbody tr').filter({ hasText: tableName });
+        await tableRow.first().waitFor({ state: 'visible', timeout: 15000 });
     }
 
     async verifyTableVisibleInList(tableName) {

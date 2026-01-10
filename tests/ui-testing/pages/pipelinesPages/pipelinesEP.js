@@ -24,8 +24,8 @@ export class PipelinesEP {
         this.pipelineImportNameInput = '[data-test="pipeline-import-name-input"]';
         this.pipelineImportErrorDestinationFunctionNameInput = '[data-test="pipeline-import-error-0-1"] [data-test="pipeline-import-destination-function-name-input"]';
         this.pipelineImportErrorDestinationFunctionNameInput2 = '[data-test="pipeline-import-error-0-2"] [data-test="pipeline-import-destination-function-name-input"]';
-        this.pipelineExportPipelineButton = (name) => `[data-test="pipeline-list-${name}-export-pipeline"]`;
-        this.pipelineDeleteButton = '[data-test="pipeline-list-re1-delete-pipeline"]';
+        this.pipelineMoreOptionsButton = (name) => `[data-test="pipeline-list-${name}-more-options"]`;
+        // Note: Export and Delete are now in the more options menu (three-dot menu)
         this.confirmButton = '[data-test="confirm-button"]';
         this.fileInput = page.locator('input[type="file"]');
     }
@@ -123,112 +123,93 @@ export class PipelinesEP {
         await this.page.locator(this.pipelineImportNameInput).click();
         await this.page.locator(this.pipelineImportNameInput).fill(name);
 
-        // Check if stream dropdown is visible for error-0-1 by checking if error-0-3 exists
-        // If error-0-3 exists, it means we have the new flow with stream dropdown
-        const error03Exists = await this.page.locator('[data-test="pipeline-import-error-0-3"]').count() > 0;
+        // Check if stream dropdown exists using specific data-test attribute (more reliable than positional indexes)
+        const streamDropdownExists = await this.page.locator('[data-test="pipeline-import-source-stream-name-input"]')
+            .waitFor({ state: 'visible', timeout: 3000 })
+            .then(() => true)
+            .catch(() => false);
 
-        if (error03Exists) {
-            // New flow: Stream dropdown is visible
-            // First: Click on the stream dropdown for error-0-1
-            const streamDropdown = this.page.locator('[data-test="pipeline-import-error-0-1"]').getByText('arrow_drop_down');
-            await streamDropdown.waitFor({ state: 'visible' });
+        if (streamDropdownExists) {
+            // Stream dropdown is visible - need to select a stream first
+            const streamDropdown = this.page.locator('[data-test="pipeline-import-source-stream-name-input"]');
+
+            // Click to open the dropdown and activate input mode
             await streamDropdown.click();
 
-            // Wait for dropdown to open
+            // Wait for dropdown menu to appear (Quasar renders dropdown in a portal)
+            const dropdownMenu = this.page.locator('.q-menu.scroll');
+            await dropdownMenu.waitFor({ state: 'visible', timeout: 10000 });
+
+            // Wait for options to load
+            await this.page.waitForTimeout(500);
+
+            // Try to find e2e_automate stream - it might be in a virtual scroll list
+            // First, try typing to filter (this triggers the q-select's filter)
+            await this.page.keyboard.type('e2e', { delay: 50 });
             await this.page.waitForTimeout(1000);
 
-            // Select the stream we are ingesting data to (e2e_automate stream)
-            const streamOption = this.page.getByRole('option', { name: 'e2e_automate', exact: true });
+            // Look for the stream option in the dropdown
+            let streamOption = this.page.locator('.q-menu .q-item').filter({ hasText: 'e2e_automate' }).first();
+            let optionFound = await streamOption.isVisible().catch(() => false);
+
+            // If not found with filter, clear and try scrolling
+            if (!optionFound) {
+                // Clear the filter by selecting all and deleting
+                await this.page.keyboard.press('Control+a');
+                await this.page.keyboard.press('Backspace');
+                await this.page.waitForTimeout(500);
+
+                // Scroll through virtual list to find the stream
+                const scrollContainer = this.page.locator('.q-menu.scroll .q-virtual-scroll__content');
+                const hasVirtualScroll = await scrollContainer.count() > 0;
+
+                if (hasVirtualScroll) {
+                    // Scroll down to find e2e_automate in virtual list
+                    for (let i = 0; i < 20 && !optionFound; i++) {
+                        await dropdownMenu.evaluate(el => el.scrollTop += 200);
+                        await this.page.waitForTimeout(200);
+                        optionFound = await streamOption.isVisible().catch(() => false);
+                    }
+                }
+            }
+
+            // Click the stream option
             await streamOption.waitFor({ state: 'visible', timeout: 10000 });
             await streamOption.click();
 
             // Wait for dropdown to close
-            await this.page.waitForTimeout(2000);
+            await this.page.waitForTimeout(1000);
+        }
 
-            // Second: Click on the function dropdown for error-0-2
-            await this.page.locator('[data-test="pipeline-import-error-0-2"]').getByText('arrow_drop_down').waitFor({ state: 'visible' });
-            await this.page.locator('[data-test="pipeline-import-error-0-2"]').getByText('arrow_drop_down').click();
+        // Find all function dropdowns using specific data-test attribute
+        const functionDropdowns = this.page.locator('[data-test="pipeline-import-destination-function-name-input"]');
+        const functionCount = await functionDropdowns.count();
+
+        // Fill function dropdowns in order
+        const functionNames = [functionName1, functionName2];
+        for (let i = 0; i < Math.min(functionCount, functionNames.length); i++) {
+            const dropdown = functionDropdowns.nth(i);
+
+            // Click to open the dropdown
+            await dropdown.waitFor({ state: 'visible', timeout: 5000 });
+            await dropdown.click();
 
             // Wait for dropdown to open
-            await this.page.waitForTimeout(1000);
+            await this.page.waitForTimeout(500);
 
-            // Select the first function
-            const option1 = this.page.getByRole('option', { name: functionName1 });
+            // Select the function (use exact match to avoid partial matches like 'first5' matching 'first587')
+            const option = this.page.getByRole('option', { name: functionNames[i], exact: true });
             try {
-                await option1.scrollIntoViewIfNeeded({ timeout: 5000 });
+                await option.scrollIntoViewIfNeeded({ timeout: 3000 });
             } catch (error) {
-                // If scroll fails, wait a bit more for the dropdown to populate
-                await this.page.waitForTimeout(2000);
+                // If scroll fails, wait a bit for dropdown to populate
+                await this.page.waitForTimeout(1000);
             }
-            await option1.waitFor({ state: 'visible', timeout: 10000 });
-            await option1.click();
+            await option.waitFor({ state: 'visible', timeout: 10000 });
+            await option.click();
 
-            // Wait for dropdown to close
-            await this.page.waitForTimeout(2000);
-
-            // Third: Click on the function dropdown for error-0-3
-            await this.page.locator('[data-test="pipeline-import-error-0-3"]').getByText('arrow_drop_down').waitFor({ state: 'visible' });
-            await this.page.locator('[data-test="pipeline-import-error-0-3"]').getByText('arrow_drop_down').click();
-
-            // Wait for dropdown to open
+            // Wait for dropdown to close before moving to next
             await this.page.waitForTimeout(1000);
-
-            // Select the second function
-            const option2 = this.page.getByRole('option', { name: functionName2 });
-            try {
-                await option2.scrollIntoViewIfNeeded({ timeout: 5000 });
-            } catch (error) {
-                // If scroll fails, wait a bit more for the dropdown to populate
-                await this.page.waitForTimeout(2000);
-            }
-            await option2.waitFor({ state: 'visible', timeout: 10000 });
-            await option2.click();
-
-            // Wait for dropdown to close
-            await this.page.waitForTimeout(2000);
-        } else {
-            // Old flow: Stream dropdown is not visible
-            // First: Click on the function dropdown for error-0-1
-            await this.page.locator(this.pipelineImportErrorDestinationFunctionNameInput).waitFor({ state: 'visible' });
-            await this.page.locator(this.pipelineImportErrorDestinationFunctionNameInput).click();
-
-            // Wait for dropdown to open
-            await this.page.waitForTimeout(1000);
-
-            // Select the first function
-            const option1 = this.page.getByRole('option', { name: functionName1 });
-            try {
-                await option1.scrollIntoViewIfNeeded({ timeout: 5000 });
-            } catch (error) {
-                // If scroll fails, wait a bit more for the dropdown to populate
-                await this.page.waitForTimeout(2000);
-            }
-            await option1.waitFor({ state: 'visible', timeout: 10000 });
-            await option1.locator('div').nth(2).click();
-
-            // Wait for dropdown to close
-            await this.page.waitForTimeout(2000);
-
-            // Second: Click on the function dropdown for error-0-2
-            await this.page.locator(this.pipelineImportErrorDestinationFunctionNameInput2).waitFor({ state: 'visible' });
-            await this.page.locator(this.pipelineImportErrorDestinationFunctionNameInput2).click();
-
-            // Wait for dropdown to open
-            await this.page.waitForTimeout(1000);
-
-            // Select the second function
-            const option2 = this.page.getByRole('option', { name: functionName2 });
-            try {
-                await option2.scrollIntoViewIfNeeded({ timeout: 5000 });
-            } catch (error) {
-                // If scroll fails, wait a bit more for the dropdown to populate
-                await this.page.waitForTimeout(2000);
-            }
-            await option2.waitFor({ state: 'visible', timeout: 10000 });
-            await option2.click();
-
-            // Wait for dropdown to close
-            await this.page.waitForTimeout(2000);
         }
     }
 
@@ -239,34 +220,40 @@ export class PipelinesEP {
     }
 
     async downloadPipeline(name) {
-        const pipelineExportButton = this.page.locator(`[data-test="pipeline-list-${name}-export-pipeline"]`);
+        // Click on more options (three-dot menu) then export
+        const moreOptionsButton = this.page.locator(
+          `[data-test="pipeline-list-${name}-more-options"]`
+        );
 
         // Wait for the element to be visible and enabled before clicking
         try {
-            await pipelineExportButton.waitFor({ state: 'visible', timeout: 60000 }); // Increase timeout if necessary
+            await moreOptionsButton.waitFor({ state: 'visible', timeout: 60000 });
         } catch (error) {
-            console.error(`Pipeline export button not visible: ${error.message}`);
-            throw new Error(`Pipeline export button not visible for: ${name}`);
+            console.error(`Pipeline more options button not visible: ${error.message}`);
+            throw new Error(`Pipeline more options button not visible for: ${name}`);
         }
 
-        // Check if the button is enabled
-        const isEnabled = await pipelineExportButton.isEnabled();
-        if (!isEnabled) {
-            throw new Error(`Pipeline export button is not enabled for: ${name}`);
-        }
+        // Click the more options button to open the menu
+        await moreOptionsButton.click();
+        await this.page.waitForTimeout(500);
 
-        // Click the button to start the download
-        await pipelineExportButton.click();
+        // Click export option in the menu (Quasar q-item)
+        await this.page.locator('.q-menu .q-item').filter({ hasText: 'Export' }).click();
         console.log(`Clicked on the export pipeline button for pipeline: ${name}`);
-
-
     }
 
 
 
     async deletePipeline(name) {
-
-        await this.page.locator(`[data-test="pipeline-list-${name}-delete-pipeline"]`).click();
+        // Click on more options (three-dot menu) then delete
+        const moreOptionsButton = this.page.locator(
+          `[data-test="pipeline-list-${name}-more-options"]`
+        );
+        await moreOptionsButton.waitFor({ state: "visible" });
+        await moreOptionsButton.click();
+        await this.page.waitForTimeout(500);
+        // Click delete option in the menu (Quasar q-item)
+        await this.page.locator('.q-menu .q-item').filter({ hasText: 'Delete' }).click();
         await this.page.locator(this.confirmButton).waitFor({ state: 'visible' });
         await this.page.locator(this.confirmButton).click();
     }

@@ -76,11 +76,19 @@ mod m20251118_000002_create_sessions_table;
 mod m20251118_000003_delete_meta_sessions;
 mod m20251126_100001_create_service_streams_table;
 mod m20251126_100002_create_service_streams_dimensions_table;
+mod m20251128_000001_create_kv_store_table;
+mod m20251128_000002_populate_kv_store_table;
+mod m20251128_000003_delete_kv_from_meta;
 mod m20251204_000001_create_alert_incidents_table;
 mod m20251207_000001_create_system_settings_table;
+mod m20251218_000001_add_expires_at_to_sessions;
 mod m20251219_000001_add_org_id_to_search_queue;
 mod m20251221_000001_create_enrichment_table_urls;
 mod m20251226_000001_add_enrichment_table_urls_is_local_region;
+mod m20251229_000001_create_backfill_jobs;
+mod m20251230_000001_add_allow_static_token_to_org_users;
+mod m20260107_000001_sync_distinct_stream_retention;
+mod m20260108_000001_recreate_enrichment_table_urls_with_ksuids;
 
 pub struct Migrator;
 
@@ -146,19 +154,36 @@ impl MigratorTrait for Migrator {
             Box::new(m20251118_000003_delete_meta_sessions::Migration),
             Box::new(m20251126_100001_create_service_streams_table::Migration),
             Box::new(m20251126_100002_create_service_streams_dimensions_table::Migration),
+            Box::new(m20251128_000001_create_kv_store_table::Migration),
+            Box::new(m20251128_000002_populate_kv_store_table::Migration),
+            Box::new(m20251128_000003_delete_kv_from_meta::Migration),
             Box::new(m20251204_000001_create_alert_incidents_table::Migration),
             Box::new(m20251207_000001_create_system_settings_table::Migration),
             Box::new(m20251219_000001_add_org_id_to_search_queue::Migration),
             Box::new(m20251221_000001_create_enrichment_table_urls::Migration),
+            Box::new(m20251218_000001_add_expires_at_to_sessions::Migration),
             Box::new(m20251226_000001_add_enrichment_table_urls_is_local_region::Migration),
+            Box::new(m20251229_000001_create_backfill_jobs::Migration),
+            Box::new(m20251230_000001_add_allow_static_token_to_org_users::Migration),
+            Box::new(m20260107_000001_sync_distinct_stream_retention::Migration),
+            Box::new(m20260108_000001_recreate_enrichment_table_urls_with_ksuids::Migration),
         ]
     }
 }
 
-pub fn get_text_type() -> String {
+pub fn get_text_type() -> &'static str {
     let db_type = config::get_config().common.meta_store.as_str().into();
     match db_type {
-        MetaStore::MySQL => config::get_config().limit.db_text_data_type.clone(),
-        _ => "text".to_string(),
+        MetaStore::MySQL => "longtext",
+        _ => "text",
+    }
+}
+
+pub fn get_binary_type() -> &'static str {
+    let db_type = config::get_config().common.meta_store.as_str().into();
+    match db_type {
+        MetaStore::MySQL => "longblob",
+        MetaStore::Sqlite => "blob",
+        _ => "bytea",
     }
 }

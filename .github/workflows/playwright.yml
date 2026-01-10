@@ -30,6 +30,7 @@ env:
   ZO_BASE_URL_SC_UI: http://localhost:5080
   INGESTION_URL: http://localhost:5080
   ORGNAME: default
+  ZO_WEB_URL: "http://localhost:5080"
   ZO_QUICK_MODE_NUM_FIELDS: 100
   ZO_QUICK_MODE_STRATEGY: first
   ZO_ALLOW_USER_DEFINED_SCHEMAS: true
@@ -75,10 +76,11 @@ jobs:
         with:
           cache-on-failure: true
           prefix-key: playwright
+
       - name: Install Protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          version: "21.12"
+        run: |
+          bash ./.github/protoc.sh
+
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -159,6 +161,7 @@ jobs:
                 "alerts-e2e-flow.spec.js",
                 "alerts-ui-operations.spec.js",
                 "alerts-import.spec.js",
+                "alerts-advanced.spec.js",
               ]
           - testfolder: "Dashboards-Core"
             browser: "chrome"
@@ -225,7 +228,27 @@ jobs:
               ]
           - testfolder: "RegressionSet"
             browser: "chrome"
-            run_files: ["logs-regression.spec.js", "streams-regression.spec.js", "enrichment-regression.spec.js", "ui-regression.spec.js"]
+            run_files:
+              [
+                "logs-regression.spec.js",
+                "streams-regression.spec.js",
+                "enrichment-regression.spec.js",
+                "ui-regression.spec.js",
+                "pipeline-regression.spec.js",
+              ]
+            # - testfolder: "Dashboards-Variables-Scoped"
+            #   browser: "chrome"
+            #   run_files:
+            #     [
+            #       "dashboard-variables-global.spec.js",
+            #       "dashboard-variables-tab-level.spec.js",
+            #       "dashboard-variables-panel-level.spec.js",
+            #       "dashboard-variables-dependency.spec.js",
+            #       "dashboard-variables-refresh.spec.js",
+            #       "dashboard-variables-url-sync.spec.js",
+            #       "dashboard-variables-creation-scopes.spec.js",
+            #       "dashboard-variables-null-handling.spec.js",
+            #     ]
     steps:
       - name: Clone the current repo
         uses: actions/checkout@v5
@@ -385,7 +408,7 @@ jobs:
               "Logs-Core"|"Logs-Queries")
                 ACTUAL_FOLDER="Logs"
                 ;;
-              "Dashboards-Core"|"Dashboards-Settings"|"Dashboards-Charts"|"Dashboards-Streaming")
+              "Dashboards-Core"|"Dashboards-Settings"|"Dashboards-Charts"|"Dashboards-Streaming"|"Dashboards-Variables-Scoped")
                 ACTUAL_FOLDER="Dashboards"
                 ;;
               *)

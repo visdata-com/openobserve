@@ -17,7 +17,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 <template>
   <div
     data-test="add-stream-query-routing-section "
-    class="full-width stream-routing-section tw-h-full"
+    class="full-width stream-routing-section tw:h-full"
     :class="[
       store.state.theme === 'dark' ? 'bg-dark' : 'bg-white',
       { 'fullscreen-mode': isFullscreenMode },
@@ -516,7 +516,7 @@ const validateSqlQuery = async () => {
       .search({
         org_identifier: store.state.selectedOrganization.identifier,
         query,
-        page_type: "logs",
+        page_type: streamRoute.value.stream_type, //use the selected stream type
         validate: true,
       })
       .then((res: any) => {

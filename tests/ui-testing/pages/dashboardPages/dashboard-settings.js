@@ -1,6 +1,8 @@
 // Dashboard Setting Page Object
 // This class contains methods to interact with the dashboard settings page in OpenObserve.
 // This includes changing the dashboard name, adding tabs, managing variables, and more.
+const testLogger = require('../../playwright-tests/utils/test-logger.js');
+
 export default class DashboardSetting {
   constructor(page) {
     this.page = page;
@@ -155,6 +157,19 @@ export default class DashboardSetting {
       .click();
   }
 
+  // Navigate to Variables tab after opening settings
+  async goToVariablesTab() {
+    // Wait for settings dialog to be fully visible
+    await this.page
+      .locator('[data-test="dashboard-settings-variable-tab"]')
+      .waitFor({ state: "visible", timeout: 10000 });
+
+    // Click on Variables tab
+    await this.page
+      .locator('[data-test="dashboard-settings-variable-tab"]')
+      .click();
+  }
+
   //Generate unique variable name
   variableName(prefix = "u") {
     return `${prefix}_${Date.now()}`;
@@ -163,9 +178,9 @@ export default class DashboardSetting {
   //variable type: Query Values
   async addVariable(type, variableName, streamType, Stream, field) {
     await this.page
-      .locator('[data-test="dashboard-variable-add-btn"]')
+      .locator('[data-test="dashboard-add-variable-btn"]')
       .waitFor({ state: "visible" });
-    await this.page.locator('[data-test="dashboard-variable-add-btn"]').click();
+    await this.page.locator('[data-test="dashboard-add-variable-btn"]').click();
     await this.page
       .locator('[data-test="dashboard-variable-type-select"]')
       .waitFor({ state: "visible" });
@@ -190,14 +205,63 @@ export default class DashboardSetting {
     await streamTypeOption.waitFor({ state: "visible", timeout: 10000 });
     await streamTypeOption.click();
 
-    await this.page
-      .locator('[data-test="dashboard-variable-stream-select"]')
-      .click();
+    // Click the stream selector to open and focus it
+    const streamSelector = this.page.locator('[data-test="dashboard-variable-stream-select"]');
+    await streamSelector.click();
 
-    // Wait for the stream option to be visible before clicking
-    const streamOption = this.page.getByText(Stream, { exact: true });
-    await streamOption.waitFor({ state: "visible", timeout: 10000 });
-    await streamOption.click();
+    // Wait for the dropdown to open
+    await this.page.waitForSelector('[role="listbox"]', { state: 'visible', timeout: 10000 });
+
+    // The stream dropdown supports search filtering via use-input
+    // Type the stream name to filter the list using keyboard
+    await this.page.keyboard.type(Stream, { delay: 50 });
+
+    // Wait a moment for filtering to complete
+    await this.page.waitForTimeout(500);
+
+    // Wait for dropdown to have options available after filtering
+    await this.page.waitForFunction(
+      () => {
+        const options = document.querySelectorAll('[role="option"]');
+        return options.length > 0;
+      },
+      { timeout: 10000, polling: 100 }
+    );
+
+    // Select the stream from filtered dropdown options
+    let streamSelected = false;
+
+    // Strategy 1: Try exact match option
+    try {
+      const streamOption = this.page.getByRole("option", { name: Stream, exact: true });
+      await streamOption.waitFor({ state: "visible", timeout: 5000 });
+      await streamOption.click();
+      streamSelected = true;
+    } catch (e) {
+      testLogger.warn(`Stream selection strategy 1 (exact match) failed for "${Stream}": ${e.message}`);
+      // Strategy 2: Try partial match
+      try {
+        const streamOption = this.page.getByRole("option", { name: Stream, exact: false }).first();
+        await streamOption.waitFor({ state: "visible", timeout: 5000 });
+        await streamOption.click();
+        streamSelected = true;
+      } catch (e2) {
+        testLogger.warn(`Stream selection strategy 2 (partial match) failed for "${Stream}": ${e2.message}`);
+        // Strategy 3: Use keyboard navigation
+        try {
+          await this.page.keyboard.press('ArrowDown');
+          await this.page.waitForTimeout(200);
+          await this.page.keyboard.press('Enter');
+          streamSelected = true;
+        } catch (e3) {
+          testLogger.warn(`Stream selection strategy 3 (keyboard) failed for "${Stream}": ${e3.message}`);
+        }
+      }
+    }
+
+    if (!streamSelected) {
+      throw new Error(`Failed to select stream: ${Stream}`);
+    }
 
     // Wait for field data to load after stream selection
     await this.page.waitForTimeout(1000);
@@ -264,9 +328,9 @@ export default class DashboardSetting {
 
   async selectConstantType(type, variableName, value) {
     await this.page
-      .locator('[data-test="dashboard-variable-add-btn"]')
+      .locator('[data-test="dashboard-add-variable-btn"]')
       .waitFor({ state: "visible" });
-    await this.page.locator('[data-test="dashboard-variable-add-btn"]').click();
+    await this.page.locator('[data-test="dashboard-add-variable-btn"]').click();
     await this.page
       .locator('[data-test="dashboard-variable-type-select"]')
       .waitFor({ state: "visible" });
@@ -289,9 +353,9 @@ export default class DashboardSetting {
   //select Textbox type
   async selectTextType(type, variableName) {
     await this.page
-      .locator('[data-test="dashboard-variable-add-btn"]')
+      .locator('[data-test="dashboard-add-variable-btn"]')
       .waitFor({ state: "visible" });
-    await this.page.locator('[data-test="dashboard-variable-add-btn"]').click();
+    await this.page.locator('[data-test="dashboard-add-variable-btn"]').click();
     await this.page
       .locator('[data-test="dashboard-variable-type-select"]')
       .waitFor({ state: "visible" });
@@ -308,9 +372,9 @@ export default class DashboardSetting {
   //select Custom type
   async selectCustomType(type, variableName, label, value) {
     await this.page
-      .locator('[data-test="dashboard-variable-add-btn"]')
+      .locator('[data-test="dashboard-add-variable-btn"]')
       .waitFor({ state: "visible" });
-    await this.page.locator('[data-test="dashboard-variable-add-btn"]').click();
+    await this.page.locator('[data-test="dashboard-add-variable-btn"]').click();
     await this.page
       .locator('[data-test="dashboard-variable-type-select"]')
       .waitFor({ state: "visible" });
@@ -392,9 +456,36 @@ export default class DashboardSetting {
 
   //close setting window
   async closeSettingWindow() {
-    await this.page
-      .locator('[data-test="dashboard-settings-close-btn"]')
-      .click();
+    // Use multiple selectors to detect if settings dialog is open
+    const settingsDialog = this.page.locator('[data-test="dashboard-settings-dialog"]').or(this.page.locator('.q-dialog'));
+    const closeBtn = this.page.locator('[data-test="dashboard-settings-close-btn"]');
+
+    // First, check if the dialog exists and is visible
+    const dialogExists = await settingsDialog.isVisible().catch(() => false);
+
+    if (!dialogExists) {
+      // Dialog already closed, nothing to do
+      return;
+    }
+
+    // Dialog is open, try to close it
+    try {
+      // Wait for close button with a short timeout
+      await closeBtn.waitFor({ state: "visible", timeout: 2000 });
+      await closeBtn.click({ timeout: 2000 });
+
+      // Wait for dialog to actually disappear
+      await settingsDialog.waitFor({ state: "hidden", timeout: 5000 });
+    } catch (error) {
+      // If clicking fails, the dialog might have already closed
+      // Verify if dialog is actually closed
+      const stillVisible = await settingsDialog.isVisible().catch(() => false);
+      if (stillVisible) {
+        // Dialog is still open but we couldn't close it - this is a real error
+        throw error;
+      }
+      // Dialog closed on its own - this is fine
+    }
   }
 
   // Update tab name in edit tab options//

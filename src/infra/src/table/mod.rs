@@ -25,6 +25,7 @@ use crate::{
 pub mod action_scripts;
 pub mod alert_incidents;
 pub mod alerts;
+pub mod backfill_jobs;
 pub mod cipher;
 pub mod compactor_manual_jobs;
 pub mod dashboards;
@@ -34,6 +35,7 @@ pub mod enrichment_table_urls;
 pub mod enrichment_tables;
 pub mod entity;
 pub mod folders;
+pub mod kv_store;
 mod migration;
 pub mod org_users;
 pub mod organizations;

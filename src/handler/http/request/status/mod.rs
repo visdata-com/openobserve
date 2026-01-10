@@ -37,7 +37,7 @@ use config::{
 };
 use hashbrown::HashMap;
 use infra::{
-    cache, file_list,
+    cache, cluster, file_list,
     schema::{STREAM_SCHEMAS, STREAM_SCHEMAS_LATEST},
 };
 use serde::Serialize;
@@ -69,12 +69,9 @@ use {
 use visdata::Visdata;
 
 use crate::{
-    common::{
-        infra::cluster,
-        meta::{
-            http::HttpResponse as MetaHttpResponse,
-            user::{AuthTokens, AuthTokensExt},
-        },
+    common::meta::{
+        http::HttpResponse as MetaHttpResponse,
+        user::{AuthTokens, AuthTokensExt},
     },
     service::{
         db,
@@ -136,6 +133,7 @@ struct ConfigResponse<'a> {
     usage_enabled: bool,
     usage_publish_interval: i64,
     ingestion_url: String,
+    web_url: String,
     #[cfg(feature = "enterprise")]
     streaming_aggregation_enabled: bool,
     min_auto_refresh_interval: u32,
@@ -199,6 +197,9 @@ struct Rum {
                    and orchestration platforms to determine service availability and readiness.",
     responses(
         (status = 200, description="Status OK", content_type = "application/json", body = inline(HealthzResponse), example = json!({"status": "ok"}))
+    ),
+    extensions(
+        ("x-o2-mcp" = json!({"enabled": false}))
     )
 )]
 #[get("/healthz")]
@@ -227,6 +228,9 @@ pub async fn healthz_head() -> Result<HttpResponse, Error> {
     responses(
         (status = 200, description="Status OK", content_type = "application/json", body = inline(HealthzResponse), example = json!({"status": "ok"})),
         (status = 404, description="Status Not OK", content_type = "application/json", body = inline(HealthzResponse), example = json!({"status": "not ok"})),
+    ),
+    extensions(
+        ("x-o2-mcp" = json!({"enabled": false}))
     )
 )]
 #[get("/schedulez")]
@@ -422,6 +426,7 @@ pub async fn zo_config() -> Result<HttpResponse, Error> {
         usage_enabled,
         usage_publish_interval,
         ingestion_url: cfg.common.ingestion_url.to_string(),
+        web_url: cfg.common.web_url.to_string(),
         #[cfg(feature = "enterprise")]
         streaming_aggregation_enabled: cfg.common.feature_query_streaming_aggs,
         min_auto_refresh_interval: cfg.common.min_auto_refresh_interval,
@@ -847,8 +852,8 @@ pub async fn dex_login() -> Result<HttpResponse, Error> {
     use o2_dex::meta::auth::PreLoginData;
 
     let login_data: PreLoginData = get_dex_login();
-    let state = login_data.state;
-    let _ = crate::service::kv::set(PKCE_STATE_ORG, &state, state.to_owned().into()).await;
+    let state = login_data.state.clone();
+    let _ = crate::service::kv::set(PKCE_STATE_ORG, &state, state.clone().into()).await;
 
     Ok(HttpResponse::Ok().json(login_data.url))
 }
@@ -1315,7 +1320,7 @@ async fn enable_node(
             }
         }
     }
-    match cluster::update_local_node(&node).await {
+    match crate::common::infra::cluster::update_local_node(&node).await {
         Ok(_) => Ok(MetaHttpResponse::json(true)),
         Err(e) => Ok(MetaHttpResponse::internal_error(e)),
     }

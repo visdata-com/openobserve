@@ -33,6 +33,7 @@ vi.mock("@/services/incidents", () => ({
     get: vi.fn(),
     updateStatus: vi.fn(),
     triggerRca: vi.fn(),
+    getCorrelatedStreams: vi.fn(),
   },
 }));
 
@@ -72,26 +73,29 @@ const createAlert = (overrides: Partial<IncidentAlert> = {}): IncidentAlert => (
 describe("IncidentDetailDrawer.vue", () => {
   let wrapper: VueWrapper<any>;
 
-  const createWrapper = async (props = {}, storeOverrides = {}, incidentId?: string) => {
+  const createWrapper = async (props = {}, storeOverrides = {}, incidentId?: string | null) => {
     // Update store state with overrides
     if (storeOverrides && Object.keys(storeOverrides).length > 0) {
       Object.assign(store.state, storeOverrides);
     }
 
-    // Set router query param if incidentId is provided
+    // Set incident_id in router query if provided
     if (incidentId) {
       await router.push({ query: { incident_id: incidentId } });
+    } else {
+      await router.push({ query: {} });
     }
 
     return mount(IncidentDetailDrawer, {
       props: {
-        incident: null,
         ...props,
       },
       global: {
         plugins: [i18n, store, router],
         stubs: {
           QDrawer: true,
+          TelemetryCorrelationDashboard: true,
+          IncidentServiceGraph: true,
         },
       },
     });
@@ -172,13 +176,7 @@ describe("IncidentDetailDrawer.vue", () => {
     });
   });
 
-  describe("Props and Model Value", () => {
-    it("should accept incident prop", async () => {
-      const incident = createIncident({ id: "test-123" });
-      wrapper = await createWrapper({ incident });
-      expect(wrapper.props().incident).toEqual(incident);
-    });
-
+  describe("URL-based Incident Loading", () => {
     it("should emit close when drawer closes", async () => {
       wrapper = await createWrapper();
 
@@ -708,23 +706,23 @@ describe("IncidentDetailDrawer.vue", () => {
       const content = "This is **bold** text";
       const formatted = wrapper.vm.formatRcaContent(content);
 
-      expect(formatted).toContain('<strong class="tw-font-semibold">bold</strong>');
+      expect(formatted).toContain('<strong class="tw:font-semibold">bold</strong>');
     });
 
     it("should format h2 headers", () => {
       const content = "## Header 2";
       const formatted = wrapper.vm.formatRcaContent(content);
 
-      expect(formatted).toContain("tw-font-bold");
-      expect(formatted).toContain("tw-text-lg");
-      expect(formatted).toContain("tw-text-blue-600");
+      expect(formatted).toContain("tw:font-bold");
+      expect(formatted).toContain("tw:text-lg");
+      expect(formatted).toContain("tw:text-blue-600");
     });
 
     it("should format h3 headers", () => {
       const content = "### Header 3";
       const formatted = wrapper.vm.formatRcaContent(content);
 
-      expect(formatted).toContain("tw-font-semibold");
+      expect(formatted).toContain("tw:font-semibold");
     });
 
     it("should format unordered lists", () => {
@@ -748,8 +746,8 @@ describe("IncidentDetailDrawer.vue", () => {
       const content = "## Root Cause\n\n**Issue**: High CPU\n\n- Check process\n- Review logs";
       const formatted = wrapper.vm.formatRcaContent(content);
 
-      expect(formatted).toContain('<strong class="tw-font-semibold">Issue</strong>');
-      expect(formatted).toContain("tw-font-bold");
+      expect(formatted).toContain('<strong class="tw:font-semibold">Issue</strong>');
+      expect(formatted).toContain("tw:font-bold");
       expect(formatted).toContain("rca-ul");
     });
   });
