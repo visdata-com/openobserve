@@ -1183,6 +1183,7 @@ pub async fn process_token_visdata(
         let organizations = vec![UserOrg {
             role: default_role,
             name: default_org.clone(),
+            org_name: default_org.clone(),
             token: config::ider::uuid(),
             rum_token: Some(config::ider::uuid()),
         }];
