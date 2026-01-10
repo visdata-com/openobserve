@@ -51,7 +51,13 @@ fn connect(readonly: bool, ddl: bool) -> Pool<MySql> {
     if dsn.is_empty() {
         dsn = cfg.common.meta_mysql_dsn.clone();
     }
-    let db_opts = MySqlConnectOptions::from_str(&dsn).expect("mysql connect options create failed");
+    let db_opts = MySqlConnectOptions::from_str(&dsn)
+        .expect("mysql connect options create failed")
+        // Disable statement cache to avoid "maximum open cursors exceeded" error
+        // on databases like OceanBase that have low cursor limits.
+        // This reduces memory usage for prepared statements at the cost of
+        // re-preparing statements on each execution.
+        .statement_cache_capacity(0);
 
     let acquire_timeout = zero_or(cfg.limit.sql_db_connections_acquire_timeout, 30);
     let idle_timeout = zero_or(cfg.limit.sql_db_connections_idle_timeout, 600);

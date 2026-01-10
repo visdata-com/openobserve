@@ -38,7 +38,10 @@ impl MysqlAdapter {
 
         let options: MySqlConnectOptions = dsn
             .parse::<MySqlConnectOptions>()?
-            .disable_statement_logging();
+            .disable_statement_logging()
+            // Disable statement cache to avoid "maximum open cursors exceeded" error
+            // on databases like OceanBase that have low cursor limits.
+            .statement_cache_capacity(0);
 
         let pool = MySqlPoolOptions::new()
             .max_connections(5)
