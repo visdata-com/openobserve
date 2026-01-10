@@ -934,6 +934,7 @@ mod tests {
             let app = test::init_service(App::new().service(create_role)).await;
             let role_req = UserRoleRequest {
                 role: "".to_string(),
+                custom: None,
             };
 
             let req = test::TestRequest::post()
@@ -950,6 +951,7 @@ mod tests {
             let app = test::init_service(App::new().service(create_role)).await;
             let role_req = UserRoleRequest {
                 role: "admin".to_string(),
+                custom: None,
             };
 
             let req = test::TestRequest::post()
@@ -962,6 +964,7 @@ mod tests {
         }
 
         #[tokio::test]
+        #[ignore] // Requires running OpenFGA service
         async fn test_get_roles_visdata() {
             let app = test::init_service(App::new().service(get_roles)).await;
             let mut req = test::TestRequest::get()
@@ -980,6 +983,7 @@ mod tests {
         }
 
         #[tokio::test]
+        #[ignore] // Requires running OpenFGA service
         async fn test_get_groups_visdata() {
             let app = test::init_service(App::new().service(get_groups)).await;
             let mut req = test::TestRequest::get()
@@ -998,6 +1002,7 @@ mod tests {
         }
 
         #[tokio::test]
+        #[ignore] // Requires running OpenFGA service
         async fn test_create_group_visdata() {
             let app = test::init_service(App::new().service(create_group)).await;
             let mut users = HashSet::new();
@@ -1020,6 +1025,7 @@ mod tests {
         }
 
         #[tokio::test]
+        #[ignore] // Requires running OpenFGA service
         async fn test_delete_role_visdata() {
             let app = test::init_service(App::new().service(delete_role)).await;
             let req = test::TestRequest::delete()
@@ -1032,6 +1038,7 @@ mod tests {
         }
 
         #[tokio::test]
+        #[ignore] // Requires running OpenFGA service
         async fn test_delete_group_visdata() {
             let app = test::init_service(App::new().service(delete_group)).await;
             let req = test::TestRequest::delete()

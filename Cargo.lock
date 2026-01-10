@@ -11511,6 +11511,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "visdata"
 version = "0.1.0"
+source = "git+https://github.com/visdata-com/o2_visdata.git?branch=main#01804e159103b678d74413e84b662e48b59b5250"
 dependencies = [
  "actix-web",
  "aes-gcm",
