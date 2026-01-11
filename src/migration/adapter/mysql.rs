@@ -15,7 +15,7 @@
 
 use async_trait::async_trait;
 use sqlx::{
-    ConnectOptions, Row as SqlxRow,
+    ConnectOptions, Executor, Row as SqlxRow,
     mysql::{MySqlConnectOptions, MySqlPool, MySqlPoolOptions, MySqlRow},
 };
 
@@ -45,6 +45,20 @@ impl MysqlAdapter {
 
         let pool = MySqlPoolOptions::new()
             .max_connections(5)
+            // Set session variables after connection establishment
+            // This is especially important for OceanBase compatibility:
+            // - ob_query_timeout: Maximum query execution time (10 minutes in microseconds)
+            // - ob_trx_timeout: Maximum transaction time (10 minutes in microseconds)
+            // These settings are silently ignored on standard MySQL/MariaDB
+            .after_connect(|conn, _meta| {
+                Box::pin(async move {
+                    // Set OceanBase-specific session variables
+                    // These are no-ops on standard MySQL but critical for OceanBase
+                    let _ = conn.execute("SET ob_query_timeout = 600000000").await;
+                    let _ = conn.execute("SET ob_trx_timeout = 600000000").await;
+                    Ok(())
+                })
+            })
             .connect_with(options)
             .await?;
 

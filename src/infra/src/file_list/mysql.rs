@@ -36,6 +36,7 @@ use crate::{
         IndexStatement,
         mysql::{CLIENT, CLIENT_DDL, CLIENT_RO, add_column, create_index, delete_index},
     },
+    dist_lock,
     errors::{DbError, Error, Result},
     file_list::FileRecord,
 };
@@ -722,66 +723,76 @@ SELECT date
             return Ok(Vec::new());
         }
 
-        let lock_pool = CLIENT.clone();
-        let lock_key = "file_list_deleted:query_deleted";
-        let lock_id = config::utils::hash::gxhash::new().sum64(lock_key);
-        let lock_sql = format!(
-            "SELECT GET_LOCK('{}', {})",
-            lock_id,
-            config::get_config().limit.meta_transaction_lock_timeout
-        );
-        let unlock_sql = format!("SELECT RELEASE_LOCK('{lock_id}')");
-        let mut lock_tx = lock_pool.begin().await?;
-        DB_QUERY_NUMS.with_label_values(&["get_lock", ""]).inc();
-        match sqlx::query_scalar::<_, i64>(&lock_sql)
-            .fetch_one(&mut *lock_tx)
-            .await
-        {
-            Ok(v) => {
-                if v != 1 {
+        let cfg = config::get_config();
+        let lock_key = "/mysql/lock/file_list_deleted/query_deleted";
+        let lock_timeout = cfg.limit.meta_transaction_lock_timeout as u64;
+
+        // Conditionally use NATS lock or MySQL GET_LOCK
+        let nats_locker = if cfg.common.use_nats_lock {
+            // NATS lock mode: returns None in local mode (skip lock)
+            dist_lock::lock(lock_key, lock_timeout).await?
+        } else {
+            None
+        };
+
+        // If not using NATS lock, use MySQL GET_LOCK
+        let (mysql_lock_tx, mysql_unlock_sql): (
+            Option<sqlx::Transaction<'_, sqlx::MySql>>,
+            Option<String>,
+        ) = if !cfg.common.use_nats_lock {
+            let lock_pool = CLIENT.clone();
+            let lock_id = config::utils::hash::gxhash::new().sum64(lock_key);
+            let lock_sql = format!("SELECT GET_LOCK('{lock_id}', {})", lock_timeout);
+            let unlock_sql = format!("SELECT RELEASE_LOCK('{lock_id}')");
+            let mut lock_tx = lock_pool.begin().await?;
+            DB_QUERY_NUMS.with_label_values(&["get_lock", ""]).inc();
+            match sqlx::query_scalar::<_, i64>(&lock_sql)
+                .fetch_one(&mut *lock_tx)
+                .await
+            {
+                Ok(v) => {
+                    if v != 1 {
+                        if let Err(e) = lock_tx.rollback().await {
+                            log::error!("[MYSQL] rollback lock for query_deleted error: {e}");
+                        }
+                        return Err(Error::from(DbError::DBOperError(
+                            "LockTimeout".to_string(),
+                            lock_key.to_string(),
+                        )));
+                    }
+                }
+                Err(e) => {
                     if let Err(e) = lock_tx.rollback().await {
                         log::error!("[MYSQL] rollback lock for query_deleted error: {e}");
                     }
-                    return Err(Error::from(DbError::DBOperError(
-                        "LockTimeout".to_string(),
-                        lock_key.to_string(),
-                    )));
+                    return Err(e.into());
                 }
-            }
-            Err(e) => {
-                if let Err(e) = lock_tx.rollback().await {
-                    log::error!("[MYSQL] rollback lock for query_deleted error: {e}");
-                }
-                return Err(e.into());
-            }
+            };
+            (Some(lock_tx), Some(unlock_sql))
+        } else {
+            (None, None)
         };
 
+        // Execute the main logic, capturing the result
         let pool = CLIENT.clone();
-        let mut tx = match pool.begin().await {
-            Ok(tx) => tx,
-            Err(e) => {
-                if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                    log::error!("[MYSQL] unlock query_deleted error: {e}");
-                }
-                if let Err(e) = lock_tx.commit().await {
-                    log::error!("[MYSQL] commit for unlock query_deleted error: {e}");
-                }
-                return Err(e.into());
-            }
-        };
+        let result: Result<Vec<FileListDeleted>> = async {
+            let mut tx = pool.begin().await?;
 
-        DB_QUERY_NUMS
-            .with_label_values(&["select", "file_list_deleted"])
-            .inc();
-        let items: Vec<FileListDeleted> = match sqlx::query_as::<_, super::FileDeletedRecord>(
-            r#"SELECT id, account, stream, date, file, index_file, flattened FROM file_list_deleted WHERE org = ? AND created_at < ? ORDER BY created_at ASC LIMIT ?;"#,
-        )
-        .bind(org_id)
-        .bind(time_max)
-        .bind(limit)
-        .fetch_all(&mut *tx)
-        .await{
-            Ok(v) => v
+            DB_QUERY_NUMS
+                .with_label_values(&["select", "file_list_deleted"])
+                .inc();
+            let items: Vec<FileListDeleted> = sqlx::query_as::<_, super::FileDeletedRecord>(
+                r#"SELECT id, account, stream, date, file, index_file, flattened FROM file_list_deleted WHERE org = ? AND created_at < ? ORDER BY created_at ASC LIMIT ?;"#,
+            )
+            .bind(org_id)
+            .bind(time_max)
+            .bind(limit)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|e| {
+                log::error!("[MYSQL] select query_deleted for update error: {e}");
+                e
+            })?
             .iter()
             .map(|r| FileListDeleted {
                 id: r.id,
@@ -790,96 +801,66 @@ SELECT date
                 index_file: r.index_file,
                 flattened: r.flattened,
             })
-            .collect(),
-            Err(e) => {
-                if let Err(e) = tx.rollback().await {
-                    log::error!(
-                        "[MYSQL] rollback select query_deleted for update error: {e}"
-                    );
-                }
-                DB_QUERY_NUMS
-                    .with_label_values(&["release_lock", ""])
-                    .inc();
-                if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                    log::error!("[MYSQL] unlock query_deleted error: {e}");
-                }
-                if let Err(e) = lock_tx.commit().await {
-                    log::error!("[MYSQL] commit for unlock query_deleted error: {e}");
-                }
-                return Err(e.into());
-            }
-        };
+            .collect();
 
-        // update file created_at to NOW to avoid these files being deleted again
-        let ids = items.iter().map(|r| r.id.to_string()).collect::<Vec<_>>();
-        if ids.is_empty() {
-            if let Err(e) = tx.rollback().await {
-                log::error!("[MYSQL] rollback select query_deleted error: {e}");
+            // update file created_at to NOW to avoid these files being deleted again
+            let ids = items.iter().map(|r| r.id.to_string()).collect::<Vec<_>>();
+            if ids.is_empty() {
+                if let Err(e) = tx.rollback().await {
+                    log::error!("[MYSQL] rollback select query_deleted error: {e}");
+                }
+                return Ok(Vec::new());
             }
-            DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-            if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                log::error!("[MYSQL] unlock query_deleted error: {e}");
-            }
-            if let Err(e) = lock_tx.commit().await {
-                log::error!("[MYSQL] commit for unlock query_deleted error: {e}");
-            }
-            return Ok(Vec::new());
-        }
-        let sql = format!(
-            "UPDATE file_list_deleted SET created_at = ? WHERE id IN ({});",
-            ids.join(",")
-        );
-        let now = config::utils::time::now_micros();
-        DB_QUERY_NUMS
-            .with_label_values(&["update", "file_list_deleted"])
-            .inc();
-        let ret = match sqlx::query(&sql).bind(now).execute(&mut *tx).await {
-            Ok(v) => v,
-            Err(e) => {
+            let sql = format!(
+                "UPDATE file_list_deleted SET created_at = ? WHERE id IN ({});",
+                ids.join(",")
+            );
+            let now = config::utils::time::now_micros();
+            DB_QUERY_NUMS
+                .with_label_values(&["update", "file_list_deleted"])
+                .inc();
+            let ret = sqlx::query(&sql).bind(now).execute(&mut *tx).await.map_err(|e| {
+                log::error!("[MYSQL] update query_deleted status error: {e}");
+                e
+            })?;
+            if ret.rows_affected() != ids.len() as u64 {
+                log::warn!(
+                    "[MYSQL] update query_deleted error: query_deleted rows affected: {}, expected: {}, try again later",
+                    ret.rows_affected(),
+                    ids.len()
+                );
                 if let Err(e) = tx.rollback().await {
                     log::error!("[MYSQL] rollback update query_deleted status error: {e}");
                 }
-                DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-                if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                    log::error!("[MYSQL] unlock query_deleted error: {e}");
-                }
-                if let Err(e) = lock_tx.commit().await {
-                    log::error!("[MYSQL] commit for unlock query_deleted error: {e}");
-                }
-                return Err(e.into());
+                return Ok(Vec::new());
             }
-        };
-        if ret.rows_affected() != ids.len() as u64 {
-            log::warn!(
-                "[MYSQL] update query_deleted error: query_deleted rows affected: {}, expected: {}, try again later",
-                ret.rows_affected(),
-                ids.len()
-            );
-            if let Err(e) = tx.rollback().await {
-                log::error!("[MYSQL] rollback update query_deleted status error: {e}");
+
+            tx.commit().await.map_err(|e| {
+                log::error!("[MYSQL] commit select query_deleted error: {e}");
+                e
+            })?;
+            Ok(items)
+        }
+        .await;
+
+        // Release lock after main logic completes (success or failure)
+        if nats_locker.is_some() {
+            if let Err(e) = dist_lock::unlock(&nats_locker).await {
+                log::error!("[MYSQL] unlock NATS lock for query_deleted error: {e}");
             }
+        } else if let (Some(mut lock_tx), Some(ref unlock_sql)) =
+            (mysql_lock_tx, mysql_unlock_sql)
+        {
             DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-            if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
+            if let Err(e) = sqlx::query(unlock_sql).execute(&mut *lock_tx).await {
                 log::error!("[MYSQL] unlock query_deleted error: {e}");
             }
             if let Err(e) = lock_tx.commit().await {
                 log::error!("[MYSQL] commit for unlock query_deleted error: {e}");
             }
-            return Ok(Vec::new());
         }
 
-        if let Err(e) = tx.commit().await {
-            log::error!("[MYSQL] commit select query_deleted error: {e}");
-            return Err(e.into());
-        }
-        DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-        if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-            log::error!("[MYSQL] unlock query_deleted error: {e}");
-        }
-        if let Err(e) = lock_tx.commit().await {
-            log::error!("[MYSQL] commit for unlock query_deleted error: {e}");
-        }
-        Ok(items)
+        result
     }
 
     async fn list_deleted(&self) -> Result<Vec<FileListDeleted>> {
@@ -1298,167 +1279,152 @@ ON DUPLICATE KEY UPDATE
     }
 
     async fn get_pending_jobs(&self, node: &str, limit: i64) -> Result<Vec<super::MergeJobRecord>> {
-        let lock_pool = CLIENT.clone();
-        let lock_key = "file_list_jobs:get_pending_jobs";
-        let lock_id = config::utils::hash::gxhash::new().sum64(lock_key);
-        let lock_sql = format!(
-            "SELECT GET_LOCK('{lock_id}', {})",
-            config::get_config().limit.meta_transaction_lock_timeout
-        );
-        let unlock_sql = format!("SELECT RELEASE_LOCK('{lock_id}')");
-        let mut lock_tx = lock_pool.begin().await?;
-        DB_QUERY_NUMS.with_label_values(&["get_lock", ""]).inc();
-        match sqlx::query_scalar::<_, i64>(&lock_sql)
-            .fetch_one(&mut *lock_tx)
-            .await
-        {
-            Ok(v) => {
-                if v != 1 {
+        let cfg = config::get_config();
+        let lock_key = "/mysql/lock/file_list_jobs/get_pending_jobs";
+        let lock_timeout = cfg.limit.meta_transaction_lock_timeout as u64;
+
+        // Conditionally use NATS lock or MySQL GET_LOCK
+        let nats_locker = if cfg.common.use_nats_lock {
+            // NATS lock mode: returns None in local mode (skip lock)
+            dist_lock::lock(lock_key, lock_timeout).await?
+        } else {
+            None
+        };
+
+        // If not using NATS lock, use MySQL GET_LOCK
+        let (mysql_lock_tx, mysql_unlock_sql): (
+            Option<sqlx::Transaction<'_, sqlx::MySql>>,
+            Option<String>,
+        ) = if !cfg.common.use_nats_lock {
+            let lock_pool = CLIENT.clone();
+            let lock_id = config::utils::hash::gxhash::new().sum64(lock_key);
+            let lock_sql = format!("SELECT GET_LOCK('{lock_id}', {})", lock_timeout);
+            let unlock_sql = format!("SELECT RELEASE_LOCK('{lock_id}')");
+            let mut lock_tx = lock_pool.begin().await?;
+            DB_QUERY_NUMS.with_label_values(&["get_lock", ""]).inc();
+            match sqlx::query_scalar::<_, i64>(&lock_sql)
+                .fetch_one(&mut *lock_tx)
+                .await
+            {
+                Ok(v) => {
+                    if v != 1 {
+                        if let Err(e) = lock_tx.rollback().await {
+                            log::error!("[MYSQL] rollback lock for get_pending_jobs error: {e}");
+                        }
+                        return Err(Error::from(DbError::DBOperError(
+                            "LockTimeout".to_string(),
+                            lock_key.to_string(),
+                        )));
+                    }
+                }
+                Err(e) => {
                     if let Err(e) = lock_tx.rollback().await {
                         log::error!("[MYSQL] rollback lock for get_pending_jobs error: {e}");
                     }
-                    return Err(Error::from(DbError::DBOperError(
-                        "LockTimeout".to_string(),
-                        lock_key.to_string(),
-                    )));
+                    return Err(e.into());
                 }
-            }
-            Err(e) => {
-                if let Err(e) = lock_tx.rollback().await {
-                    log::error!("[MYSQL] rollback lock for get_pending_jobs error: {e}");
-                }
-                return Err(e.into());
-            }
+            };
+            (Some(lock_tx), Some(unlock_sql))
+        } else {
+            (None, None)
         };
 
+        // Execute the main logic, capturing the result
         let pool = CLIENT.clone();
-        let mut tx = match pool.begin().await {
-            Ok(tx) => tx,
-            Err(e) => {
-                if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                    log::error!("[MYSQL] unlock get_pending_jobs error: {e}");
-                }
-                if let Err(e) = lock_tx.commit().await {
-                    log::error!("[MYSQL] commit for unlock get_pending_jobs error: {e}");
-                }
-                return Err(e.into());
-            }
-        };
-        // get pending jobs group by stream and order by num desc
-        DB_QUERY_NUMS
-            .with_label_values(&["select", "file_list_jobs"])
-            .inc();
-        let ret = match sqlx::query_as::<_, super::MergeJobPendingRecord>(
-            r#"
+        let result: Result<Vec<super::MergeJobRecord>> = async {
+            let mut tx = pool.begin().await?;
+            // get pending jobs group by stream and order by num desc
+            DB_QUERY_NUMS
+                .with_label_values(&["select", "file_list_jobs"])
+                .inc();
+            let ret = sqlx::query_as::<_, super::MergeJobPendingRecord>(
+                r#"
 SELECT stream, max(id) as id, CAST(COUNT(*) AS SIGNED) AS num
     FROM file_list_jobs
     WHERE status = ?
     GROUP BY stream
     ORDER BY num DESC
     LIMIT ?;"#,
-        )
-        .bind(super::FileListJobStatus::Pending)
-        .bind(limit)
-        .fetch_all(&mut *tx)
-        .await
-        {
-            Ok(v) => v,
-            Err(e) => {
-                if let Err(e) = tx.rollback().await {
-                    log::error!("[MYSQL] rollback get_pending_jobs for update error: {e}");
-                }
-                DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-                if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                    log::error!("[MYSQL] unlock get_pending_jobs error: {e}");
-                }
-                if let Err(e) = lock_tx.commit().await {
-                    log::error!("[MYSQL] commit for unlock get_pending_jobs error: {e}");
-                }
-                return Err(e.into());
-            }
-        };
-        // update jobs status to running
-        let ids = ret.iter().map(|r| r.id.to_string()).collect::<Vec<_>>();
-        if ids.is_empty() {
-            if let Err(e) = tx.rollback().await {
-                log::error!("[MYSQL] rollback get_pending_jobs error: {e}");
-            }
-            DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-            if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                log::error!("[MYSQL] unlock get_pending_jobs error: {e}");
-            }
-            if let Err(e) = lock_tx.commit().await {
-                log::error!("[MYSQL] commit for unlock get_pending_jobs error: {e}");
-            }
-            return Ok(Vec::new());
-        }
-        let sql = format!(
-            "UPDATE file_list_jobs SET status = ?, node = ?, started_at = ?, updated_at = ? WHERE id IN ({});",
-            ids.join(",")
-        );
-        let now = config::utils::time::now_micros();
-        DB_QUERY_NUMS
-            .with_label_values(&["update", "file_list_jobs"])
-            .inc();
-        if let Err(e) = sqlx::query(&sql)
-            .bind(super::FileListJobStatus::Running)
-            .bind(node)
-            .bind(now)
-            .bind(now)
-            .execute(&mut *tx)
-            .await
-        {
-            if let Err(e) = tx.rollback().await {
-                log::error!("[MYSQL] rollback update get_pending_jobs status error: {e}");
-            }
-            DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-            if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                log::error!("[MYSQL] unlock get_pending_jobs error: {e}");
-            }
-            if let Err(e) = lock_tx.commit().await {
-                log::error!("[MYSQL] commit for unlock get_pending_jobs error: {e}");
-            }
-            return Err(e.into());
-        }
-        // get jobs by ids
-        let sql = format!(
-            "SELECT * FROM file_list_jobs WHERE id IN ({});",
-            ids.join(",")
-        );
-        DB_QUERY_NUMS
-            .with_label_values(&["select", "file_list_jobs"])
-            .inc();
-        let ret = match sqlx::query_as::<_, super::MergeJobRecord>(&sql)
+            )
+            .bind(super::FileListJobStatus::Pending)
+            .bind(limit)
             .fetch_all(&mut *tx)
             .await
-        {
-            Ok(v) => v,
-            Err(e) => {
+            .map_err(|e| {
+                log::error!("[MYSQL] get_pending_jobs for update error: {e}");
+                e
+            })?;
+
+            // update jobs status to running
+            let ids = ret.iter().map(|r| r.id.to_string()).collect::<Vec<_>>();
+            if ids.is_empty() {
                 if let Err(e) = tx.rollback().await {
-                    log::error!("[MYSQL] rollback get_pending_jobs by ids error: {e}");
+                    log::error!("[MYSQL] rollback get_pending_jobs error: {e}");
                 }
-                DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-                if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                    log::error!("[MYSQL] unlock get_pending_jobs error: {e}");
-                }
-                if let Err(e) = lock_tx.commit().await {
-                    log::error!("[MYSQL] commit for unlock get_pending_jobs error: {e}");
-                }
-                return Err(e.into());
+                return Ok(Vec::new());
             }
-        };
-        if let Err(e) = tx.commit().await {
-            log::error!("[MYSQL] commit for get_pending_jobs error: {e}");
-            return Err(e.into());
+            let sql = format!(
+                "UPDATE file_list_jobs SET status = ?, node = ?, started_at = ?, updated_at = ? WHERE id IN ({});",
+                ids.join(",")
+            );
+            let now = config::utils::time::now_micros();
+            DB_QUERY_NUMS
+                .with_label_values(&["update", "file_list_jobs"])
+                .inc();
+            sqlx::query(&sql)
+                .bind(super::FileListJobStatus::Running)
+                .bind(node)
+                .bind(now)
+                .bind(now)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| {
+                    log::error!("[MYSQL] update get_pending_jobs status error: {e}");
+                    e
+                })?;
+
+            // get jobs by ids
+            let sql = format!(
+                "SELECT * FROM file_list_jobs WHERE id IN ({});",
+                ids.join(",")
+            );
+            DB_QUERY_NUMS
+                .with_label_values(&["select", "file_list_jobs"])
+                .inc();
+            let ret = sqlx::query_as::<_, super::MergeJobRecord>(&sql)
+                .fetch_all(&mut *tx)
+                .await
+                .map_err(|e| {
+                    log::error!("[MYSQL] get_pending_jobs by ids error: {e}");
+                    e
+                })?;
+
+            tx.commit().await.map_err(|e| {
+                log::error!("[MYSQL] commit for get_pending_jobs error: {e}");
+                e
+            })?;
+            Ok(ret)
         }
-        DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-        if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-            log::error!("[MYSQL] unlock get_pending_jobs error: {e}");
+        .await;
+
+        // Release lock after main logic completes (success or failure)
+        if nats_locker.is_some() {
+            if let Err(e) = dist_lock::unlock(&nats_locker).await {
+                log::error!("[MYSQL] unlock NATS lock for get_pending_jobs error: {e}");
+            }
+        } else if let (Some(mut lock_tx), Some(ref unlock_sql)) =
+            (mysql_lock_tx, mysql_unlock_sql)
+        {
+            DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
+            if let Err(e) = sqlx::query(unlock_sql).execute(&mut *lock_tx).await {
+                log::error!("[MYSQL] unlock get_pending_jobs error: {e}");
+            }
+            if let Err(e) = lock_tx.commit().await {
+                log::error!("[MYSQL] commit for unlock get_pending_jobs error: {e}");
+            }
         }
-        if let Err(e) = lock_tx.commit().await {
-            log::error!("[MYSQL] commit for unlock get_pending_jobs error: {e}");
-        }
-        Ok(ret)
+
+        result
     }
 
     async fn set_job_pending(&self, ids: &[i64]) -> Result<()> {
@@ -1622,139 +1588,132 @@ SELECT stream, max(id) as id, CAST(COUNT(*) AS SIGNED) AS num
         node: &str,
         limit: i64,
     ) -> Result<Vec<(i64, String, i64)>> {
-        let lock_pool = CLIENT.clone();
-        let lock_key = "file_list_jobs:get_pending_dump_jobs";
-        let lock_id = config::utils::hash::gxhash::new().sum64(lock_key);
-        let lock_sql = format!(
-            "SELECT GET_LOCK('{lock_id}', {})",
-            config::get_config().limit.meta_transaction_lock_timeout
-        );
-        let unlock_sql = format!("SELECT RELEASE_LOCK('{lock_id}')");
-        let mut lock_tx = lock_pool.begin().await?;
-        DB_QUERY_NUMS.with_label_values(&["get_lock", ""]).inc();
-        match sqlx::query_scalar::<_, i64>(&lock_sql)
-            .fetch_one(&mut *lock_tx)
-            .await
-        {
-            Ok(v) => {
-                if v != 1 {
+        let cfg = config::get_config();
+        let lock_key = "/mysql/lock/file_list_jobs/get_pending_dump_jobs";
+        let lock_timeout = cfg.limit.meta_transaction_lock_timeout as u64;
+
+        // Conditionally use NATS lock or MySQL GET_LOCK
+        let nats_locker = if cfg.common.use_nats_lock {
+            // NATS lock mode: returns None in local mode (skip lock)
+            dist_lock::lock(lock_key, lock_timeout).await?
+        } else {
+            None
+        };
+
+        // If not using NATS lock, use MySQL GET_LOCK
+        let (mysql_lock_tx, mysql_unlock_sql): (
+            Option<sqlx::Transaction<'_, sqlx::MySql>>,
+            Option<String>,
+        ) = if !cfg.common.use_nats_lock {
+            let lock_pool = CLIENT.clone();
+            let lock_id = config::utils::hash::gxhash::new().sum64(lock_key);
+            let lock_sql = format!("SELECT GET_LOCK('{lock_id}', {})", lock_timeout);
+            let unlock_sql = format!("SELECT RELEASE_LOCK('{lock_id}')");
+            let mut lock_tx = lock_pool.begin().await?;
+            DB_QUERY_NUMS.with_label_values(&["get_lock", ""]).inc();
+            match sqlx::query_scalar::<_, i64>(&lock_sql)
+                .fetch_one(&mut *lock_tx)
+                .await
+            {
+                Ok(v) => {
+                    if v != 1 {
+                        if let Err(e) = lock_tx.rollback().await {
+                            log::error!("[MYSQL] rollback lock for get_pending_dump_jobs error: {e}");
+                        }
+                        return Err(Error::from(DbError::DBOperError(
+                            "LockTimeout".to_string(),
+                            lock_key.to_string(),
+                        )));
+                    }
+                }
+                Err(e) => {
                     if let Err(e) = lock_tx.rollback().await {
                         log::error!("[MYSQL] rollback lock for get_pending_dump_jobs error: {e}");
                     }
-                    return Err(Error::from(DbError::DBOperError(
-                        "LockTimeout".to_string(),
-                        lock_key.to_string(),
-                    )));
+                    return Err(e.into());
                 }
-            }
-            Err(e) => {
-                if let Err(e) = lock_tx.rollback().await {
-                    log::error!("[MYSQL] rollback lock for get_pending_dump_jobs error: {e}");
-                }
-                return Err(e.into());
-            }
+            };
+            (Some(lock_tx), Some(unlock_sql))
+        } else {
+            (None, None)
         };
 
+        // Execute the main logic, capturing the result
         let pool = CLIENT.clone();
-        let mut tx = match pool.begin().await {
-            Ok(tx) => tx,
-            Err(e) => {
-                if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                    log::error!("[MYSQL] unlock get_pending_dump_jobs error: {e}");
-                }
-                if let Err(e) = lock_tx.commit().await {
-                    log::error!("[MYSQL] commit for unlock get_pending_dump_jobs error: {e}");
-                }
-                return Err(e.into());
-            }
-        };
-        // get pending dump jobs by updated_at asc
-        DB_QUERY_NUMS
-            .with_label_values(&["select", "file_list_jobs"])
-            .inc();
-        let ret = match sqlx::query_as::<_, (i64, String, i64)>(
-            r#"SELECT id, stream, offsets FROM file_list_jobs WHERE status = ? AND dumped = ? AND node = '' ORDER BY updated_at ASC limit ?"#,
-        )
-        .bind(super::FileListJobStatus::Done)
-        .bind(false)
-        .bind(limit)
-        .fetch_all(&mut *tx)
-        .await
-        {
-            Ok(v) => v,
-            Err(e) => {
-                if let Err(e) = tx.rollback().await {
-                    log::error!(
-                        "[MYSQL] rollback get_pending_dump_jobs for update error: {e}"
-                    );
-                }
-                DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-                if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                    log::error!("[MYSQL] unlock get_pending_dump_jobs error: {e}");
-                }
-                if let Err(e) = lock_tx.commit().await {
-                    log::error!("[MYSQL] commit for unlock get_pending_dump_jobs error: {e}");
-                }
-                return Err(e.into());
-            }
-        };
-
-        // update jobs node, created_at and updated_at
-        let ids = ret.iter().map(|r| r.0.to_string()).collect::<Vec<_>>();
-        if ids.is_empty() {
-            if let Err(e) = tx.rollback().await {
-                log::error!("[MYSQL] rollback get_pending_dump_jobs error: {e}");
-            }
-            DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-            if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                log::error!("[MYSQL] unlock get_pending_dump_jobs error: {e}");
-            }
-            if let Err(e) = lock_tx.commit().await {
-                log::error!("[MYSQL] commit for unlock get_pending_dump_jobs error: {e}");
-            }
-            return Ok(Vec::new());
-        }
-        let sql = format!(
-            "UPDATE file_list_jobs SET node = ?, started_at = ?, updated_at = ? WHERE id IN ({});",
-            ids.join(",")
-        );
-        let now = config::utils::time::now_micros();
-        DB_QUERY_NUMS
-            .with_label_values(&["update", "file_list_jobs"])
-            .inc();
-        if let Err(e) = sqlx::query(&sql)
-            .bind(node)
-            .bind(now)
-            .bind(now)
-            .execute(&mut *tx)
+        let result: Result<Vec<(i64, String, i64)>> = async {
+            let mut tx = pool.begin().await?;
+            // get pending dump jobs by updated_at asc
+            DB_QUERY_NUMS
+                .with_label_values(&["select", "file_list_jobs"])
+                .inc();
+            let ret = sqlx::query_as::<_, (i64, String, i64)>(
+                r#"SELECT id, stream, offsets FROM file_list_jobs WHERE status = ? AND dumped = ? AND node = '' ORDER BY updated_at ASC limit ?"#,
+            )
+            .bind(super::FileListJobStatus::Done)
+            .bind(false)
+            .bind(limit)
+            .fetch_all(&mut *tx)
             .await
-        {
-            if let Err(e) = tx.rollback().await {
-                log::error!("[MYSQL] rollback update get_pending_dump_jobs status error: {e}");
+            .map_err(|e| {
+                log::error!("[MYSQL] get_pending_dump_jobs for update error: {e}");
+                e
+            })?;
+
+            // update jobs node, created_at and updated_at
+            let ids = ret.iter().map(|r| r.0.to_string()).collect::<Vec<_>>();
+            if ids.is_empty() {
+                if let Err(e) = tx.rollback().await {
+                    log::error!("[MYSQL] rollback get_pending_dump_jobs error: {e}");
+                }
+                return Ok(Vec::new());
             }
+            let sql = format!(
+                "UPDATE file_list_jobs SET node = ?, started_at = ?, updated_at = ? WHERE id IN ({});",
+                ids.join(",")
+            );
+            let now = config::utils::time::now_micros();
+            DB_QUERY_NUMS
+                .with_label_values(&["update", "file_list_jobs"])
+                .inc();
+            sqlx::query(&sql)
+                .bind(node)
+                .bind(now)
+                .bind(now)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| {
+                    log::error!("[MYSQL] update get_pending_dump_jobs status error: {e}");
+                    e
+                })?;
+
+            // commit transaction
+            tx.commit().await.map_err(|e| {
+                log::error!("[MYSQL] commit for get_pending_dump_jobs error: {e}");
+                e
+            })?;
+
+            Ok(ret)
+        }
+        .await;
+
+        // Release lock after main logic completes (success or failure)
+        if nats_locker.is_some() {
+            if let Err(e) = dist_lock::unlock(&nats_locker).await {
+                log::error!("[MYSQL] unlock NATS lock for get_pending_dump_jobs error: {e}");
+            }
+        } else if let (Some(mut lock_tx), Some(ref unlock_sql)) =
+            (mysql_lock_tx, mysql_unlock_sql)
+        {
             DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-            if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
+            if let Err(e) = sqlx::query(unlock_sql).execute(&mut *lock_tx).await {
                 log::error!("[MYSQL] unlock get_pending_dump_jobs error: {e}");
             }
             if let Err(e) = lock_tx.commit().await {
                 log::error!("[MYSQL] commit for unlock get_pending_dump_jobs error: {e}");
             }
-            return Err(e.into());
-        }
-        // commit transaction
-        if let Err(e) = tx.commit().await {
-            log::error!("[MYSQL] commit for get_pending_dump_jobs error: {e}");
-            return Err(e.into());
-        }
-        DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-        if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-            log::error!("[MYSQL] unlock get_pending_dump_jobs error: {e}");
-        }
-        if let Err(e) = lock_tx.commit().await {
-            log::error!("[MYSQL] commit for unlock get_pending_dump_jobs error: {e}");
         }
 
-        Ok(ret)
+        result
     }
 
     async fn set_job_dumped_status(&self, ids: &[i64], dumped: bool) -> Result<()> {
