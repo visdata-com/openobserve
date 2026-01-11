@@ -24,13 +24,13 @@ use config::{
 use hashbrown::HashMap;
 use once_cell::sync::Lazy;
 use sqlx::{
-    MySql, Pool,
+    Executor, MySql, Pool,
     mysql::{MySqlConnectOptions, MySqlPoolOptions},
 };
 use tokio::sync::{OnceCell, mpsc};
 
 use super::{DBIndex, IndexStatement};
-use crate::errors::*;
+use crate::{dist_lock, errors::*};
 
 pub static CLIENT: Lazy<Pool<MySql>> = Lazy::new(|| connect(false, false));
 pub static CLIENT_RO: Lazy<Pool<MySql>> = Lazy::new(|| connect(true, false));
@@ -69,6 +69,24 @@ fn connect(readonly: bool, ddl: bool) -> Pool<MySql> {
         .acquire_timeout(Duration::from_secs(acquire_timeout))
         .idle_timeout(Some(Duration::from_secs(idle_timeout)))
         .max_lifetime(Some(Duration::from_secs(max_lifetime)))
+        // Set session variables after connection establishment
+        // This is especially important for OceanBase compatibility:
+        // - ob_query_timeout: Maximum query execution time (10 minutes in microseconds)
+        // - ob_trx_timeout: Maximum transaction time (10 minutes in microseconds)
+        // These settings are silently ignored on standard MySQL/MariaDB
+        .after_connect(|conn, _meta| {
+            Box::pin(async move {
+                // Set OceanBase-specific session variables
+                // These are no-ops on standard MySQL but critical for OceanBase
+                let _ = conn
+                    .execute("SET ob_query_timeout = 600000000")
+                    .await;
+                let _ = conn
+                    .execute("SET ob_trx_timeout = 600000000")
+                    .await;
+                Ok(())
+            })
+        })
         .connect_lazy_with(db_opts)
 }
 
@@ -239,48 +257,75 @@ impl super::Db for MysqlDb {
         update_fn: Box<super::UpdateFn>,
     ) -> Result<()> {
         let (module, key1, key2) = super::parse_key(key);
-        let lock_pool = CLIENT.clone();
-        let lock_key = format!("get_for_update_{key}");
-        let lock_id = config::utils::hash::gxhash::new().sum64(&lock_key);
-        let lock_sql = format!(
-            "SELECT GET_LOCK('{lock_id}', {})",
-            config::get_config().limit.meta_transaction_lock_timeout
-        );
-        let unlock_sql = format!("SELECT RELEASE_LOCK('{lock_id}')");
-        let mut lock_tx = lock_pool.begin().await?;
-        DB_QUERY_NUMS.with_label_values(&["get_lock", ""]).inc();
-        match sqlx::query_scalar::<_, i64>(&lock_sql)
-            .fetch_one(&mut *lock_tx)
-            .await
-        {
-            Ok(v) => {
-                if v != 1 {
+        let cfg = config::get_config();
+        let lock_key = format!("/mysql/lock/get_for_update/{key}");
+        let lock_timeout = cfg.limit.meta_transaction_lock_timeout as u64;
+
+        // Conditionally use NATS lock or MySQL GET_LOCK
+        let nats_locker = if cfg.common.use_nats_lock {
+            // NATS lock mode: returns None in local mode (skip lock)
+            dist_lock::lock(&lock_key, lock_timeout).await?
+        } else {
+            None
+        };
+
+        // If not using NATS lock, use MySQL GET_LOCK
+        let (mysql_lock_tx, mysql_unlock_sql): (
+            Option<sqlx::Transaction<'_, sqlx::MySql>>,
+            Option<String>,
+        ) = if !cfg.common.use_nats_lock {
+            let lock_pool = CLIENT.clone();
+            let lock_id = config::utils::hash::gxhash::new().sum64(&lock_key);
+            let lock_sql = format!("SELECT GET_LOCK('{lock_id}', {})", lock_timeout);
+            let unlock_sql = format!("SELECT RELEASE_LOCK('{lock_id}')");
+            let mut lock_tx = lock_pool.begin().await?;
+            DB_QUERY_NUMS.with_label_values(&["get_lock", ""]).inc();
+            match sqlx::query_scalar::<_, i64>(&lock_sql)
+                .fetch_one(&mut *lock_tx)
+                .await
+            {
+                Ok(v) => {
+                    if v != 1 {
+                        if let Err(e) = lock_tx.rollback().await {
+                            log::error!("[MYSQL] rollback lock for get_for_update error: {e}");
+                        }
+                        return Err(Error::from(DbError::DBOperError(
+                            "LockTimeout".to_string(),
+                            key.to_string(),
+                        )));
+                    }
+                }
+                Err(e) => {
                     if let Err(e) = lock_tx.rollback().await {
                         log::error!("[MYSQL] rollback lock for get_for_update error: {e}");
                     }
-                    return Err(Error::from(DbError::DBOperError(
-                        "LockTimeout".to_string(),
-                        key.to_string(),
-                    )));
+                    return Err(e.into());
                 }
-            }
-            Err(e) => {
-                if let Err(e) = lock_tx.rollback().await {
-                    log::error!("[MYSQL] rollback lock for get_for_update error: {e}");
-                }
-                return Err(e.into());
-            }
+            };
+            (Some(lock_tx), Some(unlock_sql))
+        } else {
+            (None, None)
         };
 
         let pool = CLIENT.clone();
         let mut tx = match pool.begin().await {
             Ok(tx) => tx,
             Err(e) => {
-                if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                    log::error!("[MYSQL] unlock get_for_update error: {e}");
-                }
-                if let Err(e) = lock_tx.commit().await {
-                    log::error!("[MYSQL] commit for unlock get_for_update error: {e}");
+                // Release lock on error
+                if nats_locker.is_some() {
+                    if let Err(e) = dist_lock::unlock(&nats_locker).await {
+                        log::error!("[MYSQL] unlock NATS lock for get_for_update error: {e}");
+                    }
+                } else if let (Some(mut lock_tx), Some(unlock_sql)) =
+                    (mysql_lock_tx, mysql_unlock_sql)
+                {
+                    DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
+                    if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
+                        log::error!("[MYSQL] unlock get_for_update error: {e}");
+                    }
+                    if let Err(e) = lock_tx.commit().await {
+                        log::error!("[MYSQL] commit for unlock get_for_update error: {e}");
+                    }
                 }
                 return Err(e.into());
             }
@@ -306,12 +351,21 @@ impl super::Db for MysqlDb {
                         if let Err(e) = tx.rollback().await {
                             log::error!("[MYSQL] rollback get_for_update error: {e}");
                         }
-                        DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-                        if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                            log::error!("[MYSQL] unlock get_for_update error: {e}");
-                        }
-                        if let Err(e) = lock_tx.commit().await {
-                            log::error!("[MYSQL] commit for unlock get_for_update error: {e}");
+                        // Release lock on error
+                        if nats_locker.is_some() {
+                            if let Err(e) = dist_lock::unlock(&nats_locker).await {
+                                log::error!("[MYSQL] unlock NATS lock for get_for_update error: {e}");
+                            }
+                        } else if let (Some(mut lock_tx), Some(unlock_sql)) =
+                            (mysql_lock_tx, mysql_unlock_sql)
+                        {
+                            DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
+                            if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
+                                log::error!("[MYSQL] unlock get_for_update error: {e}");
+                            }
+                            if let Err(e) = lock_tx.commit().await {
+                                log::error!("[MYSQL] commit for unlock get_for_update error: {e}");
+                            }
                         }
                         return Err(e.into());
                     }
@@ -336,12 +390,21 @@ impl super::Db for MysqlDb {
                         if let Err(e) = tx.rollback().await {
                             log::error!("[MYSQL] rollback get_for_update error: {e}");
                         }
-                        DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-                        if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                            log::error!("[MYSQL] unlock get_for_update error: {e}");
-                        }
-                        if let Err(e) = lock_tx.commit().await {
-                            log::error!("[MYSQL] commit for unlock get_for_update error: {e}");
+                        // Release lock on error
+                        if nats_locker.is_some() {
+                            if let Err(e) = dist_lock::unlock(&nats_locker).await {
+                                log::error!("[MYSQL] unlock NATS lock for get_for_update error: {e}");
+                            }
+                        } else if let (Some(mut lock_tx), Some(unlock_sql)) =
+                            (mysql_lock_tx, mysql_unlock_sql)
+                        {
+                            DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
+                            if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
+                                log::error!("[MYSQL] unlock get_for_update error: {e}");
+                            }
+                            if let Err(e) = lock_tx.commit().await {
+                                log::error!("[MYSQL] commit for unlock get_for_update error: {e}");
+                            }
                         }
                         return Err(e.into());
                     }
@@ -356,12 +419,21 @@ impl super::Db for MysqlDb {
                 if let Err(e) = tx.rollback().await {
                     log::error!("[MYSQL] rollback get_for_update error: {e}");
                 }
-                DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-                if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                    log::error!("[MYSQL] unlock get_for_update error: {e}");
-                }
-                if let Err(e) = lock_tx.commit().await {
-                    log::error!("[MYSQL] commit for unlock get_for_update error: {e}");
+                // Release lock on error
+                if nats_locker.is_some() {
+                    if let Err(e) = dist_lock::unlock(&nats_locker).await {
+                        log::error!("[MYSQL] unlock NATS lock for get_for_update error: {e}");
+                    }
+                } else if let (Some(mut lock_tx), Some(unlock_sql)) =
+                    (mysql_lock_tx, mysql_unlock_sql)
+                {
+                    DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
+                    if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
+                        log::error!("[MYSQL] unlock get_for_update error: {e}");
+                    }
+                    if let Err(e) = lock_tx.commit().await {
+                        log::error!("[MYSQL] commit for unlock get_for_update error: {e}");
+                    }
                 }
                 return Err(e);
             }
@@ -369,12 +441,21 @@ impl super::Db for MysqlDb {
                 if let Err(e) = tx.rollback().await {
                     log::error!("[MYSQL] rollback get_for_update error: {e}");
                 }
-                DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-                if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                    log::error!("[MYSQL] unlock get_for_update error: {e}");
-                }
-                if let Err(e) = lock_tx.commit().await {
-                    log::error!("[MYSQL] commit for unlock get_for_update error: {e}");
+                // Release lock on success (no update needed)
+                if nats_locker.is_some() {
+                    if let Err(e) = dist_lock::unlock(&nats_locker).await {
+                        log::error!("[MYSQL] unlock NATS lock for get_for_update error: {e}");
+                    }
+                } else if let (Some(mut lock_tx), Some(unlock_sql)) =
+                    (mysql_lock_tx, mysql_unlock_sql)
+                {
+                    DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
+                    if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
+                        log::error!("[MYSQL] unlock get_for_update error: {e}");
+                    }
+                    if let Err(e) = lock_tx.commit().await {
+                        log::error!("[MYSQL] commit for unlock get_for_update error: {e}");
+                    }
                 }
                 return Ok(());
             }
@@ -407,12 +488,21 @@ impl super::Db for MysqlDb {
                 if let Err(e) = tx.rollback().await {
                     log::error!("[MYSQL] rollback get_for_update error: {e}");
                 }
-                DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-                if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                    log::error!("[MYSQL] unlock get_for_update error: {e}");
-                }
-                if let Err(e) = lock_tx.commit().await {
-                    log::error!("[MYSQL] commit for unlock get_for_update error: {e}");
+                // Release lock on error
+                if nats_locker.is_some() {
+                    if let Err(e) = dist_lock::unlock(&nats_locker).await {
+                        log::error!("[MYSQL] unlock NATS lock for get_for_update error: {e}");
+                    }
+                } else if let (Some(mut lock_tx), Some(unlock_sql)) =
+                    (mysql_lock_tx, mysql_unlock_sql)
+                {
+                    DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
+                    if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
+                        log::error!("[MYSQL] unlock get_for_update error: {e}");
+                    }
+                    if let Err(e) = lock_tx.commit().await {
+                        log::error!("[MYSQL] commit for unlock get_for_update error: {e}");
+                    }
                 }
                 return Err(e.into());
             }
@@ -437,12 +527,21 @@ impl super::Db for MysqlDb {
                 if let Err(e) = tx.rollback().await {
                     log::error!("[MYSQL] rollback get_for_update error: {e}");
                 }
-                DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-                if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                    log::error!("[MYSQL] unlock get_for_update error: {e}");
-                }
-                if let Err(e) = lock_tx.commit().await {
-                    log::error!("[MYSQL] commit for unlock get_for_update error: {e}");
+                // Release lock on error
+                if nats_locker.is_some() {
+                    if let Err(e) = dist_lock::unlock(&nats_locker).await {
+                        log::error!("[MYSQL] unlock NATS lock for get_for_update error: {e}");
+                    }
+                } else if let (Some(mut lock_tx), Some(unlock_sql)) =
+                    (mysql_lock_tx, mysql_unlock_sql)
+                {
+                    DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
+                    if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
+                        log::error!("[MYSQL] unlock get_for_update error: {e}");
+                    }
+                    if let Err(e) = lock_tx.commit().await {
+                        log::error!("[MYSQL] commit for unlock get_for_update error: {e}");
+                    }
                 }
                 return Err(e.into());
             }
@@ -452,12 +551,19 @@ impl super::Db for MysqlDb {
             log::error!("[MYSQL] commit get_for_update error: {e}");
             return Err(e.into());
         }
-        DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-        if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-            log::error!("[MYSQL] unlock get_for_update error: {e}");
-        }
-        if let Err(e) = lock_tx.commit().await {
-            log::error!("[MYSQL] commit for unlock get_for_update error: {e}");
+        // Release lock on success
+        if nats_locker.is_some() {
+            if let Err(e) = dist_lock::unlock(&nats_locker).await {
+                log::error!("[MYSQL] unlock NATS lock for get_for_update error: {e}");
+            }
+        } else if let (Some(mut lock_tx), Some(unlock_sql)) = (mysql_lock_tx, mysql_unlock_sql) {
+            DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
+            if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
+                log::error!("[MYSQL] unlock get_for_update error: {e}");
+            }
+            if let Err(e) = lock_tx.commit().await {
+                log::error!("[MYSQL] commit for unlock get_for_update error: {e}");
+            }
         }
 
         // event watch

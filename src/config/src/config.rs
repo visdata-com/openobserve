@@ -773,6 +773,10 @@ pub struct Common {
     pub meta_mysql_ro_dsn: String, // mysql://root:12345678@readonly:3306/openobserve
     #[env_config(name = "ZO_META_DDL_DSN", default = "")]
     pub meta_ddl_dsn: String, // same db as meta store, but user with ddl perms
+    // Use NATS distributed lock instead of MySQL GET_LOCK
+    // This is useful for OceanBase and other MySQL-compatible databases that don't fully support GET_LOCK
+    #[env_config(name = "ZO_USE_NATS_LOCK", default = false)]
+    pub use_nats_lock: bool,
     #[env_config(name = "ZO_NODE_ROLE", default = "all")]
     pub node_role: String,
     #[env_config(

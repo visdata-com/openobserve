@@ -30,6 +30,7 @@ use crate::{
         self, IndexStatement,
         mysql::{CLIENT, CLIENT_DDL, CLIENT_RO, add_column, create_index, drop_column},
     },
+    dist_lock,
     errors::{DbError, Error, Result},
 };
 
@@ -536,173 +537,157 @@ INSERT IGNORE INTO scheduled_jobs (org, module, module_key, is_realtime, is_sile
                 .num_microseconds()
                 .unwrap();
 
-        let lock_pool = CLIENT.clone();
-        let lock_key = "scheduler_pull_lock".to_string();
-        let lock_id = config::utils::hash::gxhash::new().sum64(&lock_key);
-        let lock_sql = format!(
-            "SELECT GET_LOCK('{lock_id}', {})",
-            config::get_config().limit.meta_transaction_lock_timeout
-        );
-        let unlock_sql = format!("SELECT RELEASE_LOCK('{lock_id}')");
-        let mut lock_tx = lock_pool.begin().await?;
-        DB_QUERY_NUMS
-            .with_label_values(&["get_lock", "scheduled_jobs"])
-            .inc();
-        match sqlx::query_scalar::<_, i64>(&lock_sql)
-            .fetch_one(&mut *lock_tx)
-            .await
-        {
-            Ok(v) => {
-                if v != 1 {
+        let cfg = config::get_config();
+        let lock_key = "/mysql/lock/scheduler_pull";
+        let lock_timeout = cfg.limit.meta_transaction_lock_timeout as u64;
+
+        // Conditionally use NATS lock or MySQL GET_LOCK
+        let nats_locker = if cfg.common.use_nats_lock {
+            // NATS lock mode: returns None in local mode (skip lock)
+            dist_lock::lock(lock_key, lock_timeout).await?
+        } else {
+            None
+        };
+
+        // If not using NATS lock, use MySQL GET_LOCK
+        let (mysql_lock_tx, mysql_unlock_sql): (
+            Option<sqlx::Transaction<'_, sqlx::MySql>>,
+            Option<String>,
+        ) = if !cfg.common.use_nats_lock {
+            let lock_pool = CLIENT.clone();
+            let lock_id = config::utils::hash::gxhash::new().sum64(lock_key);
+            let lock_sql = format!("SELECT GET_LOCK('{lock_id}', {})", lock_timeout);
+            let unlock_sql = format!("SELECT RELEASE_LOCK('{lock_id}')");
+            let mut lock_tx = lock_pool.begin().await?;
+            DB_QUERY_NUMS
+                .with_label_values(&["get_lock", "scheduled_jobs"])
+                .inc();
+            match sqlx::query_scalar::<_, i64>(&lock_sql)
+                .fetch_one(&mut *lock_tx)
+                .await
+            {
+                Ok(v) => {
+                    if v != 1 {
+                        if let Err(e) = lock_tx.rollback().await {
+                            log::error!("[SCHEDULER] rollback lock for pull scheduled_jobs error: {e}");
+                        }
+                        return Err(Error::from(DbError::DBOperError(
+                            "LockTimeout".to_string(),
+                            lock_key.to_string(),
+                        )));
+                    }
+                }
+                Err(e) => {
                     if let Err(e) = lock_tx.rollback().await {
                         log::error!("[SCHEDULER] rollback lock for pull scheduled_jobs error: {e}");
                     }
-                    return Err(Error::from(DbError::DBOperError(
-                        "LockTimeout".to_string(),
-                        lock_key,
-                    )));
+                    return Err(e.into());
                 }
-            }
-            Err(e) => {
-                if let Err(e) = lock_tx.rollback().await {
-                    log::error!("[SCHEDULER] rollback lock for pull scheduled_jobs error: {e}");
-                }
-                return Err(e.into());
-            }
+            };
+            (Some(lock_tx), Some(unlock_sql))
+        } else {
+            (None, None)
         };
 
+        // Execute the main logic, capturing the result and job_ids for later use
         let pool = CLIENT.clone();
-        let mut tx = match pool.begin().await {
-            Ok(tx) => tx,
-            Err(e) => {
-                if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                    log::error!("[SCHEDULER] unlock pull scheduled_jobs error: {e}");
-                }
-                if let Err(e) = lock_tx.commit().await {
-                    log::error!("[SCHEDULER] commit for unlock pull scheduled_jobs error: {e}");
-                }
-                return Err(e.into());
-            }
-        };
+        let result: Result<Vec<String>> = async {
+            let mut tx = pool.begin().await?;
 
-        DB_QUERY_NUMS
-            .with_label_values(&["select", "scheduled_jobs"])
-            .inc();
-        let job_ids: Vec<TriggerId> = match sqlx::query_as::<_, TriggerId>(
-            r#"SELECT id
+            DB_QUERY_NUMS
+                .with_label_values(&["select", "scheduled_jobs"])
+                .inc();
+            let job_ids: Vec<TriggerId> = sqlx::query_as::<_, TriggerId>(
+                r#"SELECT id
 FROM scheduled_jobs
 WHERE status = ? AND next_run_at <= ? AND NOT (is_realtime = ? AND is_silenced = ?)
 ORDER BY next_run_at
 LIMIT ?;
-            "#,
-        )
-        .bind(TriggerStatus::Waiting)
-        .bind(now)
-        .bind(true)
-        .bind(false)
-        .bind(concurrency)
-        .fetch_all(&mut *tx)
-        .await
-        {
-            Ok(ids) => ids,
-            Err(e) => {
+                "#,
+            )
+            .bind(TriggerStatus::Waiting)
+            .bind(now)
+            .bind(true)
+            .bind(false)
+            .bind(concurrency)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|e| {
+                log::error!("[SCHEDULER] select jobs for update error: {e}");
+                e
+            })?;
+
+            log::debug!(
+                "scheduler pull: selected scheduled jobs for update: {}",
+                job_ids.len()
+            );
+            if job_ids.is_empty() {
                 if let Err(e) = tx.rollback().await {
-                    log::error!("[SCHEDULER] rollback select jobs for update error: {e}");
+                    log::error!("[SCHEDULER] rollback scheduler pull error: {e}");
                 }
-                DB_QUERY_NUMS
-                    .with_label_values(&["release_lock", "scheduled_jobs"])
-                    .inc();
-                if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                    log::error!("[SCHEDULER] unlock pull scheduled_jobs error: {e}");
-                }
-                if let Err(e) = lock_tx.commit().await {
-                    log::error!("[SCHEDULER] commit for unlock pull scheduled_jobs error: {e}");
-                }
-                return Err(e.into());
+                return Ok(vec![]);
             }
-        };
 
-        log::debug!(
-            "scheduler pull: selected scheduled jobs for update: {}",
-            job_ids.len()
-        );
-        if job_ids.is_empty() {
-            if let Err(e) = tx.rollback().await {
-                log::error!("[SCHEDULER] rollback scheduler pull error: {e}");
-            }
+            let job_ids: Vec<String> = job_ids.into_iter().map(|id| id.id.to_string()).collect();
             DB_QUERY_NUMS
-                .with_label_values(&["release_lock", "scheduled_jobs"])
+                .with_label_values(&["update", "scheduled_jobs"])
                 .inc();
-            if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                log::error!("[SCHEDULER] unlock pull scheduled_jobs error: {e}");
-            }
-            if let Err(e) = lock_tx.commit().await {
-                log::error!("[SCHEDULER] commit for unlock pull scheduled_jobs error: {e}");
-            }
-            return Ok(vec![]);
-        }
-
-        let job_ids: Vec<String> = job_ids.into_iter().map(|id| id.id.to_string()).collect();
-        DB_QUERY_NUMS
-            .with_label_values(&["update", "scheduled_jobs"])
-            .inc();
-        let query = format!(
-            "UPDATE scheduled_jobs
+            let query = format!(
+                "UPDATE scheduled_jobs
 SET status = ?, start_time = ?,
     end_time = CASE
         WHEN module = ? THEN ?
         ELSE ?
     END
 WHERE id IN ({});",
-            job_ids.join(",")
-        );
-        if let Err(e) = sqlx::query(&query)
-            .bind(TriggerStatus::Processing)
-            .bind(now)
-            .bind(TriggerModule::Report)
-            .bind(report_max_time)
-            .bind(alert_max_time)
-            .execute(&mut *tx)
-            .await
+                job_ids.join(",")
+            );
+            sqlx::query(&query)
+                .bind(TriggerStatus::Processing)
+                .bind(now)
+                .bind(TriggerModule::Report)
+                .bind(report_max_time)
+                .bind(alert_max_time)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| {
+                    log::error!("[MYSQL] update scheduled jobs status error: {e}");
+                    e
+                })?;
+
+            log::debug!("Update scheduled jobs for selected pull job ids");
+            tx.commit().await.map_err(|e| {
+                log::error!("[SCHEDULER] commit scheduler pull update error: {e}");
+                e
+            })?;
+
+            Ok(job_ids)
+        }
+        .await;
+
+        // Release lock after main logic completes (success or failure)
+        if nats_locker.is_some() {
+            if let Err(e) = dist_lock::unlock(&nats_locker).await {
+                log::error!("[SCHEDULER] unlock NATS lock for pull scheduled_jobs error: {e}");
+            }
+        } else if let (Some(mut lock_tx), Some(ref unlock_sql)) =
+            (mysql_lock_tx, mysql_unlock_sql)
         {
-            if let Err(e) = tx.rollback().await {
-                log::error!("[MYSQL] rollback update scheduled jobs status error: {e}");
-            }
             DB_QUERY_NUMS
                 .with_label_values(&["release_lock", "scheduled_jobs"])
                 .inc();
-            if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
+            if let Err(e) = sqlx::query(unlock_sql).execute(&mut *lock_tx).await {
                 log::error!("[SCHEDULER] unlock pull scheduled_jobs error: {e}");
             }
             if let Err(e) = lock_tx.commit().await {
                 log::error!("[SCHEDULER] commit for unlock pull scheduled_jobs error: {e}");
             }
-            return Err(e.into());
         }
 
-        log::debug!("Update scheduled jobs for selected pull job ids");
-        if let Err(e) = tx.commit().await {
-            log::error!("[SCHEDULER] commit scheduler pull update error: {e}");
-            DB_QUERY_NUMS
-                .with_label_values(&["release_lock", "scheduled_jobs"])
-                .inc();
-            if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                log::error!("[SCHEDULER] unlock pull scheduled_jobs error: {e}");
-            }
-            if let Err(e) = lock_tx.commit().await {
-                log::error!("[SCHEDULER] commit for unlock pull scheduled_jobs error: {e}");
-            }
-            return Err(e.into());
-        }
-
-        DB_QUERY_NUMS
-            .with_label_values(&["release_lock", "scheduled_jobs"])
-            .inc();
-        if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-            log::error!("[SCHEDULER] unlock pull scheduled_jobs error: {e}");
-        }
-        if let Err(e) = lock_tx.commit().await {
-            log::error!("[SCHEDULER] commit for unlock pull scheduled_jobs error: {e}");
+        // Handle result after lock is released
+        let job_ids = result?;
+        if job_ids.is_empty() {
+            return Ok(vec![]);
         }
 
         let query = format!(
