@@ -865,7 +865,11 @@ async fn gc() -> Result<(), anyhow::Error> {
         w.gc(cfg.disk_cache.gc_size).await?;
         drop(w);
     }
-    let scale_factor = std::cmp::max(1, cfg.disk_cache.max_size / cfg.disk_cache.result_max_size);
+    let scale_factor = if cfg.disk_cache.result_max_size > 0 {
+        std::cmp::max(1, cfg.disk_cache.max_size / cfg.disk_cache.result_max_size)
+    } else {
+        1
+    };
     let release_size = std::cmp::max(
         10 * config::SIZE_IN_MB as usize,
         cfg.disk_cache.release_size / scale_factor,
@@ -881,10 +885,11 @@ async fn gc() -> Result<(), anyhow::Error> {
         w.gc(cfg.disk_cache.gc_size).await?;
         drop(w);
     }
-    let scale_factor = std::cmp::max(
-        1,
-        cfg.disk_cache.max_size / cfg.disk_cache.aggregation_max_size,
-    );
+    let scale_factor = if cfg.disk_cache.aggregation_max_size > 0 {
+        std::cmp::max(1, cfg.disk_cache.max_size / cfg.disk_cache.aggregation_max_size)
+    } else {
+        1
+    };
     let release_size = std::cmp::max(
         10 * config::SIZE_IN_MB as usize,
         cfg.disk_cache.release_size / scale_factor,
