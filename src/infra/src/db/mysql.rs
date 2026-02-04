@@ -18,6 +18,7 @@ use std::{collections::HashSet, str::FromStr, sync::Arc, time::Duration};
 use async_trait::async_trait;
 use bytes::Bytes;
 use config::{
+    meta::meta_store::MetaStore,
     metrics::{DB_QUERY_NUMS, DB_QUERY_TIME},
     utils::{hash::Sum64, util::zero_or},
 };
@@ -51,7 +52,24 @@ fn connect(readonly: bool, ddl: bool) -> Pool<MySql> {
     if dsn.is_empty() {
         dsn = cfg.common.meta_mysql_dsn.clone();
     }
-    let db_opts = MySqlConnectOptions::from_str(&dsn).expect("mysql connect options create failed");
+    let mut db_opts =
+        MySqlConnectOptions::from_str(&dsn).expect("mysql connect options create failed");
+
+    // For OceanBase compatibility:
+    // 1. Disable options that cause subquery in SET sql_mode OceanBase doesn't support: SET
+    //    sql_mode=(SELECT CONCAT(@@sql_mode, '...'))
+    // 2. Use utf8mb4_general_ci collation instead of utf8mb4_unicode_ci OceanBase only supports
+    //    utf8mb4_general_ci and utf8mb4_bin for utf8mb4 charset
+    if matches!(
+        MetaStore::from(cfg.common.meta_store.as_str()),
+        MetaStore::OceanBaseLegacy | MetaStore::OceanBase
+    ) {
+        db_opts = db_opts
+            .charset("utf8mb4")
+            .collation("utf8mb4_general_ci")
+            .pipes_as_concat(false)
+            .no_engine_substitution(false);
+    }
 
     let acquire_timeout = zero_or(cfg.limit.sql_db_connections_acquire_timeout, 30);
     let idle_timeout = zero_or(cfg.limit.sql_db_connections_idle_timeout, 600);
@@ -101,6 +119,163 @@ pub struct MysqlDb {}
 impl MysqlDb {
     pub fn new() -> Self {
         Self {}
+    }
+
+    /// Inner implementation of get_for_update without the GET_LOCK mechanism.
+    /// This method is designed to be called while holding an external lock.
+    /// Used by OceanBaseDb which uses NATS distributed lock instead of MySQL GET_LOCK.
+    pub async fn get_for_update_inner(
+        &self,
+        key: &str,
+        need_watch: bool,
+        start_dt: Option<i64>,
+        update_fn: Box<super::UpdateFn>,
+    ) -> Result<()> {
+        let (module, key1, key2) = super::parse_key(key);
+        let pool = CLIENT.clone();
+        let mut tx = pool.begin().await?;
+
+        let mut need_watch_dt = 0;
+        let row = if let Some(start_dt) = start_dt {
+            DB_QUERY_NUMS.with_label_values(&["select", "meta"]).inc();
+            match sqlx::query_as::<_, super::MetaRecord>(
+                r#"SELECT id, module, key1, key2, start_dt, value FROM meta WHERE module = ? AND key1 = ? AND key2 = ? AND start_dt = ?;"#
+            )
+            .bind(&module)
+            .bind(&key1)
+            .bind(&key2)
+            .bind(start_dt)
+            .fetch_one(&mut *tx)
+            .await
+            {
+                Ok(v) => Some(v),
+                Err(e) => {
+                    if e.to_string().contains("no rows returned") {
+                        None
+                    } else {
+                        if let Err(e) = tx.rollback().await {
+                            log::error!("[MYSQL] rollback get_for_update_inner error: {e}");
+                        }
+                        return Err(e.into());
+                    }
+                }
+            }
+        } else {
+            DB_QUERY_NUMS.with_label_values(&["select", "meta"]).inc();
+            match sqlx::query_as::<_, super::MetaRecord>(
+                r#"SELECT id, module, key1, key2, start_dt, value FROM meta WHERE module = ? AND key1 = ? AND key2 = ? ORDER BY start_dt DESC, id DESC;"#
+            )
+            .bind(&module)
+            .bind(&key1)
+            .bind(&key2)
+            .fetch_one(&mut *tx)
+            .await
+            {
+                Ok(v) => Some(v),
+                Err(e) => {
+                    if e.to_string().contains("no rows returned") {
+                        None
+                    } else {
+                        if let Err(e) = tx.rollback().await {
+                            log::error!("[MYSQL] rollback get_for_update_inner error: {e}");
+                        }
+                        return Err(e.into());
+                    }
+                }
+            }
+        };
+
+        let exist = row.is_some();
+        let row_id = row.as_ref().map(|r| r.id);
+        let value = row.map(|r| Bytes::from(r.value));
+        let (value, new_value) = match update_fn(value) {
+            Err(e) => {
+                if let Err(e) = tx.rollback().await {
+                    log::error!("[MYSQL] rollback get_for_update_inner error: {e}");
+                }
+                return Err(e);
+            }
+            Ok(None) => {
+                if let Err(e) = tx.rollback().await {
+                    log::error!("[MYSQL] rollback get_for_update_inner error: {e}");
+                }
+                return Ok(());
+            }
+            Ok(Some(v)) => v,
+        };
+
+        // update value
+        if let Some(value) = value {
+            let ret = if exist {
+                DB_QUERY_NUMS.with_label_values(&["update", "meta"]).inc();
+                sqlx::query(r#"UPDATE meta SET value = ? WHERE id = ?;"#)
+                    .bind(String::from_utf8(value.to_vec()).unwrap_or_default())
+                    .bind(row_id.unwrap())
+                    .execute(&mut *tx)
+                    .await
+            } else {
+                DB_QUERY_NUMS.with_label_values(&["insert", "meta"]).inc();
+                sqlx::query(
+                    r#"INSERT INTO meta (module, key1, key2, start_dt, value) VALUES (?, ?, ?, ?, ?);"#,
+                )
+                .bind(&module)
+                .bind(&key1)
+                .bind(&key2)
+                .bind(start_dt.unwrap_or_default())
+                .bind(String::from_utf8(value.to_vec()).unwrap_or_default())
+                .execute(&mut *tx)
+                .await
+            };
+            if let Err(e) = ret {
+                if let Err(e) = tx.rollback().await {
+                    log::error!("[MYSQL] rollback get_for_update_inner error: {e}");
+                }
+                return Err(e.into());
+            }
+        };
+
+        // new value
+        if let Some((new_key, new_value, new_start_dt)) = new_value {
+            need_watch_dt = new_start_dt.unwrap_or_default();
+            let (module, key1, key2) = super::parse_key(&new_key);
+            DB_QUERY_NUMS.with_label_values(&["insert", "meta"]).inc();
+            if let Err(e) = sqlx::query(
+                r#"INSERT INTO meta (module, key1, key2, start_dt, value) VALUES (?, ?, ?, ?, ?);"#,
+            )
+            .bind(&module)
+            .bind(&key1)
+            .bind(&key2)
+            .bind(new_start_dt.unwrap_or_default())
+            .bind(String::from_utf8(new_value.to_vec()).unwrap_or_default())
+            .execute(&mut *tx)
+            .await
+            {
+                if let Err(e) = tx.rollback().await {
+                    log::error!("[MYSQL] rollback get_for_update_inner error: {e}");
+                }
+                return Err(e.into());
+            }
+        }
+
+        if let Err(e) = tx.commit().await {
+            log::error!("[MYSQL] commit get_for_update_inner error: {e}");
+            return Err(e.into());
+        }
+
+        // event watch
+        if need_watch {
+            let start_dt = if need_watch_dt > 0 {
+                Some(need_watch_dt)
+            } else {
+                start_dt
+            };
+            let cluster_coordinator = super::get_coordinator().await;
+            cluster_coordinator
+                .put(key, Bytes::from(""), true, start_dt)
+                .await?;
+        }
+
+        Ok(())
     }
 }
 
@@ -232,7 +407,6 @@ impl super::Db for MysqlDb {
         start_dt: Option<i64>,
         update_fn: Box<super::UpdateFn>,
     ) -> Result<()> {
-        let (module, key1, key2) = super::parse_key(key);
         let lock_pool = CLIENT.clone();
         let lock_key = format!("get_for_update_{key}");
         let lock_id = config::utils::hash::gxhash::new().sum64(&lock_key);
@@ -266,186 +440,10 @@ impl super::Db for MysqlDb {
             }
         };
 
-        let pool = CLIENT.clone();
-        let mut tx = match pool.begin().await {
-            Ok(tx) => tx,
-            Err(e) => {
-                if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                    log::error!("[MYSQL] unlock get_for_update error: {e}");
-                }
-                if let Err(e) = lock_tx.commit().await {
-                    log::error!("[MYSQL] commit for unlock get_for_update error: {e}");
-                }
-                return Err(e.into());
-            }
-        };
-        let mut need_watch_dt = 0;
-        let row = if let Some(start_dt) = start_dt {
-            DB_QUERY_NUMS.with_label_values(&["select", "meta"]).inc();
-            match sqlx::query_as::<_,super::MetaRecord>(
-                r#"SELECT id, module, key1, key2, start_dt, value FROM meta WHERE module = ? AND key1 = ? AND key2 = ? AND start_dt = ?;"#
-            )
-              .bind(&module)
-              .bind(&key1)
-              .bind(&key2)
-            .bind(start_dt)
-            .fetch_one(&mut *tx)
-            .await
-            {
-                Ok(v) => Some(v),
-                Err(e) => {
-                    if e.to_string().contains("no rows returned") {
-                        None
-                    } else {
-                        if let Err(e) = tx.rollback().await {
-                            log::error!("[MYSQL] rollback get_for_update error: {e}");
-                        }
-                        DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-                        if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                            log::error!("[MYSQL] unlock get_for_update error: {e}");
-                        }
-                        if let Err(e) = lock_tx.commit().await {
-                            log::error!("[MYSQL] commit for unlock get_for_update error: {e}");
-                        }
-                        return Err(e.into());
-                    }
-                }
-            }
-        } else {
-            DB_QUERY_NUMS.with_label_values(&["select", "meta"]).inc();
-            match sqlx::query_as::<_,super::MetaRecord>(
-                r#"SELECT id, module, key1, key2, start_dt, value FROM meta WHERE module = ? AND key1 = ? AND key2 = ? ORDER BY start_dt DESC, id DESC;"#
-            )
-            .bind(&module)
-            .bind(&key1)
-            .bind(&key2)
-            .fetch_one(&mut *tx)
-            .await
-            {
-                Ok(v) => Some(v),
-                Err(e) => {
-                    if e.to_string().contains("no rows returned") {
-                        None
-                    } else {
-                        if let Err(e) = tx.rollback().await {
-                            log::error!("[MYSQL] rollback get_for_update error: {e}");
-                        }
-                        DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-                        if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                            log::error!("[MYSQL] unlock get_for_update error: {e}");
-                        }
-                        if let Err(e) = lock_tx.commit().await {
-                            log::error!("[MYSQL] commit for unlock get_for_update error: {e}");
-                        }
-                        return Err(e.into());
-                    }
-                }
-            }
-        };
-        let exist = row.is_some();
-        let row_id = row.as_ref().map(|r| r.id);
-        let value = row.map(|r| Bytes::from(r.value));
-        let (value, new_value) = match update_fn(value) {
-            Err(e) => {
-                if let Err(e) = tx.rollback().await {
-                    log::error!("[MYSQL] rollback get_for_update error: {e}");
-                }
-                DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-                if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                    log::error!("[MYSQL] unlock get_for_update error: {e}");
-                }
-                if let Err(e) = lock_tx.commit().await {
-                    log::error!("[MYSQL] commit for unlock get_for_update error: {e}");
-                }
-                return Err(e);
-            }
-            Ok(None) => {
-                if let Err(e) = tx.rollback().await {
-                    log::error!("[MYSQL] rollback get_for_update error: {e}");
-                }
-                DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-                if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                    log::error!("[MYSQL] unlock get_for_update error: {e}");
-                }
-                if let Err(e) = lock_tx.commit().await {
-                    log::error!("[MYSQL] commit for unlock get_for_update error: {e}");
-                }
-                return Ok(());
-            }
-            Ok(Some(v)) => v,
-        };
+        let result = self
+            .get_for_update_inner(key, need_watch, start_dt, update_fn)
+            .await;
 
-        // update value
-        if let Some(value) = value {
-            let ret = if exist {
-                DB_QUERY_NUMS.with_label_values(&["update", "meta"]).inc();
-                sqlx::query(r#"UPDATE meta SET value = ? WHERE id = ?;"#)
-                    .bind(String::from_utf8(value.to_vec()).unwrap_or_default())
-                    .bind(row_id.unwrap())
-                    .execute(&mut *tx)
-                    .await
-            } else {
-                DB_QUERY_NUMS.with_label_values(&["insert", "meta"]).inc();
-                sqlx::query(
-                    r#"INSERT INTO meta (module, key1, key2, start_dt, value) VALUES (?, ?, ?, ?, ?);"#,
-                )
-                .bind(&module)
-                .bind(&key1)
-                .bind(&key2)
-                .bind(start_dt.unwrap_or_default())
-                .bind(String::from_utf8(value.to_vec()).unwrap_or_default())
-                .execute(&mut *tx)
-                .await
-            };
-            if let Err(e) = ret {
-                if let Err(e) = tx.rollback().await {
-                    log::error!("[MYSQL] rollback get_for_update error: {e}");
-                }
-                DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-                if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                    log::error!("[MYSQL] unlock get_for_update error: {e}");
-                }
-                if let Err(e) = lock_tx.commit().await {
-                    log::error!("[MYSQL] commit for unlock get_for_update error: {e}");
-                }
-                return Err(e.into());
-            }
-        };
-
-        // new value
-        if let Some((new_key, new_value, new_start_dt)) = new_value {
-            need_watch_dt = new_start_dt.unwrap_or_default();
-            let (module, key1, key2) = super::parse_key(&new_key);
-            DB_QUERY_NUMS.with_label_values(&["insert", "meta"]).inc();
-            if let Err(e) = sqlx::query(
-                r#"INSERT INTO meta (module, key1, key2, start_dt, value) VALUES (?, ?, ?, ?, ?);"#,
-            )
-            .bind(&module)
-            .bind(&key1)
-            .bind(&key2)
-            .bind(new_start_dt.unwrap_or_default())
-            .bind(String::from_utf8(new_value.to_vec()).unwrap_or_default())
-            .execute(&mut *tx)
-            .await
-            {
-                if let Err(e) = tx.rollback().await {
-                    log::error!("[MYSQL] rollback get_for_update error: {e}");
-                }
-                DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-                if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                    log::error!("[MYSQL] unlock get_for_update error: {e}");
-                }
-                if let Err(e) = lock_tx.commit().await {
-                    log::error!("[MYSQL] commit for unlock get_for_update error: {e}");
-                }
-                return Err(e.into());
-            }
-        }
-
-        if let Err(e) = tx.commit().await {
-            log::error!("[MYSQL] commit get_for_update error: {e}");
-            return Err(e.into());
-        }
         DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
         if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
             log::error!("[MYSQL] unlock get_for_update error: {e}");
@@ -454,20 +452,7 @@ impl super::Db for MysqlDb {
             log::error!("[MYSQL] commit for unlock get_for_update error: {e}");
         }
 
-        // event watch
-        if need_watch {
-            let start_dt = if need_watch_dt > 0 {
-                Some(need_watch_dt)
-            } else {
-                start_dt
-            };
-            let cluster_coordinator = super::get_coordinator().await;
-            cluster_coordinator
-                .put(key, Bytes::from(""), true, start_dt)
-                .await?;
-        }
-
-        Ok(())
+        result
     }
 
     async fn delete(

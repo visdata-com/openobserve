@@ -18,12 +18,15 @@
 //! This module contains the core test logic that is shared between
 //! MySQL and OceanBase integration tests. Each test file provides
 //! thin wrappers that call these implementations.
+#![allow(dead_code)]
+use std::sync::{
+    Arc,
+    atomic::{AtomicI32, Ordering as AtomicOrd},
+};
 
 use bytes::Bytes;
-use infra::db::{mysql::MysqlDb, Db};
+use infra::db::{Db, get_db};
 use sqlx::{MySql, Pool};
-use std::sync::atomic::{AtomicI32, Ordering as AtomicOrd};
-use std::sync::Arc;
 
 // ==================== Schema Tests ====================
 
@@ -56,37 +59,31 @@ pub async fn test_required_indexes_exist_impl(pool: &Pool<MySql>) {
 /// Test unique constraint on composite key.
 pub async fn test_unique_constraint_impl(pool: &Pool<MySql>) {
     // Insert first record
-    sqlx::query(
-        "INSERT INTO meta (module, key1, key2, start_dt, value) VALUES (?, ?, ?, ?, ?)",
-    )
-    .bind("unique_test")
-    .bind("key1")
-    .bind("key2")
-    .bind(100i64)
-    .bind("value1")
-    .execute(pool)
-    .await
-    .expect("Insert failed");
+    sqlx::query("INSERT INTO meta (module, key1, key2, start_dt, value) VALUES (?, ?, ?, ?, ?)")
+        .bind("unique_test")
+        .bind("key1")
+        .bind("key2")
+        .bind(100i64)
+        .bind("value1")
+        .execute(pool)
+        .await
+        .expect("Insert failed");
 
     // Different start_dt should be allowed
-    sqlx::query(
-        "INSERT INTO meta (module, key1, key2, start_dt, value) VALUES (?, ?, ?, ?, ?)",
-    )
-    .bind("unique_test")
-    .bind("key1")
-    .bind("key2")
-    .bind(200i64)
-    .bind("value2")
-    .execute(pool)
-    .await
-    .expect("Insert with different start_dt should succeed");
+    sqlx::query("INSERT INTO meta (module, key1, key2, start_dt, value) VALUES (?, ?, ?, ?, ?)")
+        .bind("unique_test")
+        .bind("key1")
+        .bind("key2")
+        .bind(200i64)
+        .bind("value2")
+        .execute(pool)
+        .await
+        .expect("Insert with different start_dt should succeed");
 
-    let count: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM meta WHERE module = 'unique_test'",
-    )
-    .fetch_one(pool)
-    .await
-    .expect("Count failed");
+    let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM meta WHERE module = 'unique_test'")
+        .fetch_one(pool)
+        .await
+        .expect("Count failed");
 
     assert_eq!(count.0, 2);
     println!("✓ Unique constraint allows different start_dt values");
@@ -95,7 +92,7 @@ pub async fn test_unique_constraint_impl(pool: &Pool<MySql>) {
 // ==================== Get For Update Tests ====================
 
 /// Test basic get_for_update success scenario.
-pub async fn test_get_for_update_basic_update_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_get_for_update_basic_update_impl(db: &impl Db, prefix: &str) {
     let key = format!("/gfu_test/{}/basic_update/key1", prefix);
 
     db.put(&key, Bytes::from("initial_value"), false, Some(0))
@@ -121,7 +118,7 @@ pub async fn test_get_for_update_basic_update_impl(db: &MysqlDb, prefix: &str) {
 }
 
 /// Test get_for_update when update_fn returns None.
-pub async fn test_get_for_update_returns_none_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_get_for_update_returns_none_impl(db: &impl Db, prefix: &str) {
     let key = format!("/gfu_test/{}/returns_none/key1", prefix);
 
     db.put(&key, Bytes::from("original_value"), false, Some(0))
@@ -143,7 +140,7 @@ pub async fn test_get_for_update_returns_none_impl(db: &MysqlDb, prefix: &str) {
 }
 
 /// Test get_for_update when update_fn returns an error.
-pub async fn test_get_for_update_returns_error_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_get_for_update_returns_error_impl(db: &impl Db, prefix: &str) {
     let key = format!("/gfu_test/{}/returns_error/key1", prefix);
 
     db.put(&key, Bytes::from("original_value"), false, Some(0))
@@ -163,7 +160,7 @@ pub async fn test_get_for_update_returns_error_impl(db: &MysqlDb, prefix: &str) 
 }
 
 /// Test get_for_update inserting a new record.
-pub async fn test_get_for_update_insert_when_not_exist_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_get_for_update_insert_when_not_exist_impl(db: &impl Db, prefix: &str) {
     let key = format!("/gfu_test/{}/insert_new/key1", prefix);
 
     let update_fn: Box<infra::db::UpdateFn> = Box::new(|value: Option<Bytes>| {
@@ -181,7 +178,7 @@ pub async fn test_get_for_update_insert_when_not_exist_impl(db: &MysqlDb, prefix
 }
 
 /// Test get_for_update with a new key returned from update_fn.
-pub async fn test_get_for_update_with_new_key_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_get_for_update_with_new_key_impl(db: &impl Db, prefix: &str) {
     let key = format!("/gfu_test/{}/with_new_key/key1", prefix);
     let new_key = format!("/gfu_test/{}/with_new_key/key2", prefix);
 
@@ -194,7 +191,7 @@ pub async fn test_get_for_update_with_new_key_impl(db: &MysqlDb, prefix: &str) {
         assert!(value.is_some());
         Ok(Some((
             None,
-            Some((new_key_clone.clone(), Bytes::from("new_key_value"), Some(0)))
+            Some((new_key_clone.clone(), Bytes::from("new_key_value"), Some(0))),
         )))
     });
 
@@ -211,7 +208,7 @@ pub async fn test_get_for_update_with_new_key_impl(db: &MysqlDb, prefix: &str) {
 }
 
 /// Test get_for_update with start_dt parameter.
-pub async fn test_get_for_update_with_start_dt_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_get_for_update_with_start_dt_impl(db: &impl Db, prefix: &str) {
     let key = format!("/gfu_test/{}/with_start_dt/key1", prefix);
 
     db.put(&key, Bytes::from("version_100"), false, Some(100))
@@ -233,7 +230,7 @@ pub async fn test_get_for_update_with_start_dt_impl(db: &MysqlDb, prefix: &str) 
 }
 
 /// Test get_for_update without start_dt gets the latest record.
-pub async fn test_get_for_update_without_start_dt_gets_latest_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_get_for_update_without_start_dt_gets_latest_impl(db: &impl Db, prefix: &str) {
     let key = format!("/gfu_test/{}/latest/key1", prefix);
 
     db.put(&key, Bytes::from("old_version"), false, Some(100))
@@ -258,7 +255,7 @@ pub async fn test_get_for_update_without_start_dt_gets_latest_impl(db: &MysqlDb,
 }
 
 /// Test get_for_update with both update and new key.
-pub async fn test_get_for_update_update_and_new_key_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_get_for_update_update_and_new_key_impl(db: &impl Db, prefix: &str) {
     let key = format!("/gfu_test/{}/update_and_new/key1", prefix);
     let new_key = format!("/gfu_test/{}/update_and_new/key2", prefix);
 
@@ -271,7 +268,7 @@ pub async fn test_get_for_update_update_and_new_key_impl(db: &MysqlDb, prefix: &
         assert!(value.is_some());
         Ok(Some((
             Some(Bytes::from("updated_original")),
-            Some((new_key_clone.clone(), Bytes::from("new_key_value"), Some(0)))
+            Some((new_key_clone.clone(), Bytes::from("new_key_value"), Some(0))),
         )))
     });
 
@@ -290,7 +287,7 @@ pub async fn test_get_for_update_update_and_new_key_impl(db: &MysqlDb, prefix: &
 // ==================== CRUD Tests ====================
 
 /// Test put and get operations.
-pub async fn test_put_and_get_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_put_and_get_impl(db: &impl Db, prefix: &str) {
     let key = format!("/crud_test/{}/put_get/key1", prefix);
 
     db.put(&key, Bytes::from("test_value"), false, Some(0))
@@ -303,7 +300,7 @@ pub async fn test_put_and_get_impl(db: &MysqlDb, prefix: &str) {
 }
 
 /// Test delete operation.
-pub async fn test_delete_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_delete_impl(db: &impl Db, prefix: &str) {
     let key = format!("/crud_test/{}/delete/key1", prefix);
 
     db.put(&key, Bytes::from("to_delete"), false, Some(0))
@@ -320,13 +317,18 @@ pub async fn test_delete_impl(db: &MysqlDb, prefix: &str) {
 }
 
 /// Test count operation.
-pub async fn test_count_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_count_impl(db: &impl Db, prefix: &str) {
     let base = format!("/crud_test/{}/count", prefix);
 
     for i in 0..3 {
-        db.put(&format!("{}/key{}", base, i), Bytes::from("v"), false, Some(0))
-            .await
-            .expect("Put failed");
+        db.put(
+            &format!("{}/key{}", base, i),
+            Bytes::from("v"),
+            false,
+            Some(0),
+        )
+        .await
+        .expect("Put failed");
     }
 
     let count = db.count(&base).await.expect("Count failed");
@@ -335,7 +337,7 @@ pub async fn test_count_impl(db: &MysqlDb, prefix: &str) {
 }
 
 /// Test getting a nonexistent key.
-pub async fn test_get_nonexistent_key_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_get_nonexistent_key_impl(db: &impl Db, prefix: &str) {
     let key = format!("/crud_test/{}/nonexistent/key_that_does_not_exist", prefix);
 
     let result = db.get(&key).await;
@@ -344,7 +346,7 @@ pub async fn test_get_nonexistent_key_impl(db: &MysqlDb, prefix: &str) {
 }
 
 /// Test that put overwrites existing values.
-pub async fn test_put_overwrites_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_put_overwrites_impl(db: &impl Db, prefix: &str) {
     let key = format!("/crud_test/{}/overwrite/key1", prefix);
 
     db.put(&key, Bytes::from("first_value"), false, Some(0))
@@ -364,7 +366,7 @@ pub async fn test_put_overwrites_impl(db: &MysqlDb, prefix: &str) {
 }
 
 /// Test delete with prefix.
-pub async fn test_delete_with_prefix_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_delete_with_prefix_impl(db: &impl Db, prefix: &str) {
     let base = format!("/crud_test/{}/delete_prefix", prefix);
 
     db.put(&format!("{}/key1", base), Bytes::from("v1"), false, Some(0))
@@ -390,18 +392,33 @@ pub async fn test_delete_with_prefix_impl(db: &MysqlDb, prefix: &str) {
 }
 
 /// Test list operation.
-pub async fn test_list_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_list_impl(db: &impl Db, prefix: &str) {
     let base = format!("/crud_test/{}/list", prefix);
 
-    db.put(&format!("{}/a", base), Bytes::from("value_a"), false, Some(0))
-        .await
-        .expect("Put a failed");
-    db.put(&format!("{}/b", base), Bytes::from("value_b"), false, Some(0))
-        .await
-        .expect("Put b failed");
-    db.put(&format!("{}/c", base), Bytes::from("value_c"), false, Some(0))
-        .await
-        .expect("Put c failed");
+    db.put(
+        &format!("{}/a", base),
+        Bytes::from("value_a"),
+        false,
+        Some(0),
+    )
+    .await
+    .expect("Put a failed");
+    db.put(
+        &format!("{}/b", base),
+        Bytes::from("value_b"),
+        false,
+        Some(0),
+    )
+    .await
+    .expect("Put b failed");
+    db.put(
+        &format!("{}/c", base),
+        Bytes::from("value_c"),
+        false,
+        Some(0),
+    )
+    .await
+    .expect("Put c failed");
 
     let results = db.list(&base).await.expect("List failed");
     assert_eq!(results.len(), 3);
@@ -417,7 +434,7 @@ pub async fn test_list_impl(db: &MysqlDb, prefix: &str) {
 }
 
 /// Test list_keys operation.
-pub async fn test_list_keys_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_list_keys_impl(db: &impl Db, prefix: &str) {
     let base = format!("/crud_test/{}/list_keys", prefix);
 
     db.put(&format!("{}/key1", base), Bytes::from("v1"), false, Some(0))
@@ -431,32 +448,51 @@ pub async fn test_list_keys_impl(db: &MysqlDb, prefix: &str) {
     assert_eq!(keys.len(), 2);
 
     for key in &keys {
-        assert!(key.starts_with(&base), "Key {} should start with {}", key, base);
+        assert!(
+            key.starts_with(&base),
+            "Key {} should start with {}",
+            key,
+            base
+        );
     }
     println!("✓ list_keys test passed");
 }
 
 /// Test stats operation.
-pub async fn test_stats_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_stats_impl(db: &impl Db, prefix: &str) {
     let base = format!("/crud_test/{}/stats", prefix);
 
-    db.put(&format!("{}/key1", base), Bytes::from("value1"), false, Some(0))
-        .await
-        .expect("Put failed");
+    db.put(
+        &format!("{}/key1", base),
+        Bytes::from("value1"),
+        false,
+        Some(0),
+    )
+    .await
+    .expect("Put failed");
 
     let stats = db.stats().await.expect("Stats failed");
 
-    assert!(stats.keys_count >= 0, "Stats keys_count should be non-negative");
-    assert!(stats.bytes_len >= 0, "Stats bytes_len should be non-negative");
+    assert!(
+        stats.keys_count >= 0,
+        "Stats keys_count should be non-negative"
+    );
+    assert!(
+        stats.bytes_len >= 0,
+        "Stats bytes_len should be non-negative"
+    );
 
-    println!("Stats: bytes_len={}, keys_count={}", stats.bytes_len, stats.keys_count);
+    println!(
+        "Stats: bytes_len={}, keys_count={}",
+        stats.bytes_len, stats.keys_count
+    );
     println!("✓ stats test passed");
 }
 
 // ==================== Edge Case Tests ====================
 
 /// Test Unicode values handling.
-pub async fn test_unicode_values_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_unicode_values_impl(db: &impl Db, prefix: &str) {
     let unicode_cases = [
         ("chinese", "中文测试值"),
         ("japanese", "日本語テスト"),
@@ -472,19 +508,23 @@ pub async fn test_unicode_values_impl(db: &MysqlDb, prefix: &str) {
             .await
             .unwrap_or_else(|e| panic!("Put {} failed: {}", name, e));
 
-        let result = db.get(&key).await
+        let result = db
+            .get(&key)
+            .await
             .unwrap_or_else(|e| panic!("Get {} failed: {}", name, e));
 
         assert_eq!(
-            String::from_utf8_lossy(&result), *value,
-            "Unicode mismatch for {}", name
+            String::from_utf8_lossy(&result),
+            *value,
+            "Unicode mismatch for {}",
+            name
         );
     }
     println!("✓ Unicode values test passed");
 }
 
 /// Test special characters handling.
-pub async fn test_special_characters_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_special_characters_impl(db: &impl Db, prefix: &str) {
     let special_cases = [
         ("quotes", "value with 'single' and \"double\" quotes"),
         ("backslash", "value with \\backslash\\"),
@@ -500,19 +540,23 @@ pub async fn test_special_characters_impl(db: &MysqlDb, prefix: &str) {
             .await
             .unwrap_or_else(|e| panic!("Put {} failed: {}", name, e));
 
-        let result = db.get(&key).await
+        let result = db
+            .get(&key)
+            .await
             .unwrap_or_else(|e| panic!("Get {} failed: {}", name, e));
 
         assert_eq!(
-            String::from_utf8_lossy(&result), *value,
-            "Special char mismatch for {}", name
+            String::from_utf8_lossy(&result),
+            *value,
+            "Special char mismatch for {}",
+            name
         );
     }
     println!("✓ Special characters test passed");
 }
 
 /// Test empty value handling.
-pub async fn test_empty_value_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_empty_value_impl(db: &impl Db, prefix: &str) {
     let key = format!("/edge_test/{}/empty/key1", prefix);
 
     db.put(&key, Bytes::from(""), false, Some(0))
@@ -525,7 +569,7 @@ pub async fn test_empty_value_impl(db: &MysqlDb, prefix: &str) {
 }
 
 /// Test large value handling (1MB).
-pub async fn test_large_value_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_large_value_impl(db: &impl Db, prefix: &str) {
     let key = format!("/edge_test/{}/large/key1", prefix);
 
     let large_value: String = "x".repeat(1024 * 1024);
@@ -540,7 +584,7 @@ pub async fn test_large_value_impl(db: &MysqlDb, prefix: &str) {
 }
 
 /// Test various start_dt values.
-pub async fn test_start_dt_variations_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_start_dt_variations_impl(db: &impl Db, prefix: &str) {
     let base = format!("/edge_test/{}/start_dt", prefix);
 
     let start_dts = [0i64, 1, 1000, 1704067200000000i64];
@@ -548,9 +592,14 @@ pub async fn test_start_dt_variations_impl(db: &MysqlDb, prefix: &str) {
     for start_dt in start_dts {
         let key = format!("{}/dt_{}", base, start_dt);
 
-        db.put(&key, Bytes::from(format!("value_{}", start_dt)), false, Some(start_dt))
-            .await
-            .unwrap_or_else(|e| panic!("Put with start_dt {} failed: {}", start_dt, e));
+        db.put(
+            &key,
+            Bytes::from(format!("value_{}", start_dt)),
+            false,
+            Some(start_dt),
+        )
+        .await
+        .unwrap_or_else(|e| panic!("Put with start_dt {} failed: {}", start_dt, e));
     }
 
     let count = db.count(&base).await.expect("Count failed");
@@ -595,7 +644,7 @@ impl Default for ConcurrencyTracker {
 }
 
 /// Test two clients simultaneously updating the same key.
-pub async fn test_concurrent_two_clients_same_key_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_concurrent_two_clients_same_key_impl(db: &impl Db, prefix: &str) {
     let key = format!("/concurrent/{}/two_clients/key1", prefix);
 
     db.put(&key, Bytes::from("0"), false, Some(0))
@@ -605,15 +654,22 @@ pub async fn test_concurrent_two_clients_same_key_impl(db: &MysqlDb, prefix: &st
     let key1 = key.clone();
     let key2 = key.clone();
 
+    let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+
     let task1 = tokio::spawn(async move {
-        let db = MysqlDb::new();
+        let db = get_db().await;
         let start = std::time::Instant::now();
 
         let update_fn: Box<infra::db::UpdateFn> = Box::new(|value: Option<Bytes>| {
+            tx.send(()).unwrap();
             let val: i32 = value
                 .map(|v| String::from_utf8_lossy(&v).parse().unwrap_or(0))
                 .unwrap_or(0);
-            std::thread::sleep(std::time::Duration::from_millis(100));
+            // Force a task refresh; otherwise, new spawns may be blocked and not scheduled for
+            // execution.
+            tokio::task::block_in_place(|| {
+                std::thread::sleep(std::time::Duration::from_millis(100))
+            });
             Ok(Some((Some(Bytes::from((val + 1).to_string())), None)))
         });
 
@@ -623,8 +679,8 @@ pub async fn test_concurrent_two_clients_same_key_impl(db: &MysqlDb, prefix: &st
     });
 
     let task2 = tokio::spawn(async move {
-        tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
-        let db = MysqlDb::new();
+        rx.await.unwrap();
+        let db = get_db().await;
         let start = std::time::Instant::now();
 
         let update_fn: Box<infra::db::UpdateFn> = Box::new(|value: Option<Bytes>| {
@@ -646,9 +702,14 @@ pub async fn test_concurrent_two_clients_same_key_impl(db: &MysqlDb, prefix: &st
     r2.expect(&format!("{} should succeed", name2));
 
     assert!(
-        elapsed2.as_millis() >= 80,
+        elapsed2.as_millis() >= 100,
         "Task 2 should have waited for lock. Elapsed: {:?}",
-        elapsed2
+        elapsed2,
+    );
+    assert!(
+        elapsed1.as_millis() >= 100,
+        "Task 1 should take at least 100ms. Elapsed: {:?}",
+        elapsed1
     );
 
     let final_val = db.get(&key).await.expect("Final get failed");
@@ -664,7 +725,7 @@ pub async fn test_concurrent_two_clients_same_key_impl(db: &MysqlDb, prefix: &st
 }
 
 /// Test lock serialization.
-pub async fn test_concurrent_lock_serialization_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_concurrent_lock_serialization_impl(db: &impl Db, prefix: &str) {
     let key = format!("/concurrent/{}/serialization/key1", prefix);
     let tracker = Arc::new(ConcurrencyTracker::new());
 
@@ -680,7 +741,7 @@ pub async fn test_concurrent_lock_serialization_impl(db: &MysqlDb, prefix: &str)
         let tracker_clone = tracker.clone();
 
         handles.push(tokio::spawn(async move {
-            let db = MysqlDb::new();
+            let db = get_db().await;
             let tid = task_id;
 
             let update_fn: Box<infra::db::UpdateFn> = Box::new(move |value: Option<Bytes>| {
@@ -732,7 +793,7 @@ pub async fn test_concurrent_lock_serialization_impl(db: &MysqlDb, prefix: &str)
 
 /// Test counter increment with concurrent clients.
 /// Note: Reduced from 5 to 3 workers for remote DB compatibility.
-pub async fn test_concurrent_counter_increment_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_concurrent_counter_increment_impl(db: &impl Db, prefix: &str) {
     let key = format!("/concurrent/{}/counter/key1", prefix);
 
     db.put(&key, Bytes::from("0"), false, Some(0))
@@ -745,7 +806,7 @@ pub async fn test_concurrent_counter_increment_impl(db: &MysqlDb, prefix: &str) 
     for worker_id in 0..num_workers {
         let key_clone = key.clone();
         handles.push(tokio::spawn(async move {
-            let db = MysqlDb::new();
+            let db = get_db().await;
             let wid = worker_id;
 
             let update_fn: Box<infra::db::UpdateFn> = Box::new(move |value: Option<Bytes>| {
@@ -779,11 +840,14 @@ pub async fn test_concurrent_counter_increment_impl(db: &MysqlDb, prefix: &str) 
         num_workers, num_workers, final_count
     );
 
-    println!("✓ Concurrent counter increment test passed: final = {}", final_count);
+    println!(
+        "✓ Concurrent counter increment test passed: final = {}",
+        final_count
+    );
 }
 
 /// Test multiple clients updating different keys.
-pub async fn test_concurrent_different_keys_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_concurrent_different_keys_impl(db: &impl Db, prefix: &str) {
     let num_keys = 3;
 
     for i in 0..num_keys {
@@ -799,7 +863,7 @@ pub async fn test_concurrent_different_keys_impl(db: &MysqlDb, prefix: &str) {
     for key_id in 0..num_keys {
         let key = format!("/concurrent/{}/diff_keys/key{}", prefix, key_id);
         handles.push(tokio::spawn(async move {
-            let db = MysqlDb::new();
+            let db = get_db().await;
             let kid = key_id;
 
             let update_fn: Box<infra::db::UpdateFn> = Box::new(move |value: Option<Bytes>| {
@@ -807,7 +871,10 @@ pub async fn test_concurrent_different_keys_impl(db: &MysqlDb, prefix: &str) {
                     .map(|v| String::from_utf8_lossy(&v).parse().unwrap_or(0))
                     .unwrap_or(0);
                 std::thread::sleep(std::time::Duration::from_millis(100));
-                Ok(Some((Some(Bytes::from((val + kid as i32).to_string())), None)))
+                Ok(Some((
+                    Some(Bytes::from((val + kid as i32).to_string())),
+                    None,
+                )))
             });
 
             db.get_for_update(&key, false, Some(0), update_fn)
@@ -843,11 +910,14 @@ pub async fn test_concurrent_different_keys_impl(db: &MysqlDb, prefix: &str) {
     }
 
     println!("✓ Concurrent different keys test passed");
-    println!("  Total time for {} parallel updates: {:?}", num_keys, total_time);
+    println!(
+        "  Total time for {} parallel updates: {:?}",
+        num_keys, total_time
+    );
 }
 
 /// Test lock timeout.
-pub async fn test_lock_timeout_returns_error_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_lock_timeout_returns_error_impl(db: &impl Db, prefix: &str) {
     let key = format!("/concurrent/{}/timeout/key1", prefix);
 
     db.put(&key, Bytes::from("initial"), false, Some(0))
@@ -858,7 +928,7 @@ pub async fn test_lock_timeout_returns_error_impl(db: &MysqlDb, prefix: &str) {
     let key2 = key.clone();
 
     let task1 = tokio::spawn(async move {
-        let db = MysqlDb::new();
+        let db = get_db().await;
         let update_fn: Box<infra::db::UpdateFn> = Box::new(|_value: Option<Bytes>| {
             std::thread::sleep(std::time::Duration::from_secs(5));
             Ok(Some((Some(Bytes::from("task1_updated")), None)))
@@ -869,10 +939,9 @@ pub async fn test_lock_timeout_returns_error_impl(db: &MysqlDb, prefix: &str) {
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     let task2 = tokio::spawn(async move {
-        let db = MysqlDb::new();
-        let update_fn: Box<infra::db::UpdateFn> = Box::new(|_value: Option<Bytes>| {
-            Ok(Some((Some(Bytes::from("task2_updated")), None)))
-        });
+        let db = get_db().await;
+        let update_fn: Box<infra::db::UpdateFn> =
+            Box::new(|_value: Option<Bytes>| Ok(Some((Some(Bytes::from("task2_updated")), None))));
 
         tokio::time::timeout(
             tokio::time::Duration::from_secs(2),
@@ -903,7 +972,7 @@ pub async fn test_lock_timeout_returns_error_impl(db: &MysqlDb, prefix: &str) {
 }
 
 /// Test lock released on success.
-pub async fn test_lock_released_on_success_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_lock_released_on_success_impl(db: &impl Db, prefix: &str) {
     let key = format!("/concurrent/{}/release_success/key1", prefix);
 
     db.put(&key, Bytes::from("v0"), false, Some(0))
@@ -911,9 +980,8 @@ pub async fn test_lock_released_on_success_impl(db: &MysqlDb, prefix: &str) {
         .expect("Initial put failed");
 
     {
-        let update_fn: Box<infra::db::UpdateFn> = Box::new(|_value: Option<Bytes>| {
-            Ok(Some((Some(Bytes::from("v1")), None)))
-        });
+        let update_fn: Box<infra::db::UpdateFn> =
+            Box::new(|_value: Option<Bytes>| Ok(Some((Some(Bytes::from("v1")), None))));
         db.get_for_update(&key, false, Some(0), update_fn)
             .await
             .expect("First update failed");
@@ -921,9 +989,8 @@ pub async fn test_lock_released_on_success_impl(db: &MysqlDb, prefix: &str) {
 
     let start = std::time::Instant::now();
     {
-        let update_fn: Box<infra::db::UpdateFn> = Box::new(|_value: Option<Bytes>| {
-            Ok(Some((Some(Bytes::from("v2")), None)))
-        });
+        let update_fn: Box<infra::db::UpdateFn> =
+            Box::new(|_value: Option<Bytes>| Ok(Some((Some(Bytes::from("v2")), None))));
         db.get_for_update(&key, false, Some(0), update_fn)
             .await
             .expect("Second update failed");
@@ -945,7 +1012,7 @@ pub async fn test_lock_released_on_success_impl(db: &MysqlDb, prefix: &str) {
 }
 
 /// Test lock released on update_fn error.
-pub async fn test_lock_released_on_update_fn_error_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_lock_released_on_update_fn_error_impl(db: &impl Db, prefix: &str) {
     let key = format!("/concurrent/{}/error_release/key1", prefix);
 
     db.put(&key, Bytes::from("initial"), false, Some(0))
@@ -956,11 +1023,15 @@ pub async fn test_lock_released_on_update_fn_error_impl(db: &MysqlDb, prefix: &s
     let key2 = key.clone();
 
     let task1_result = {
-        let db_clone = MysqlDb::new();
+        let db_clone = get_db().await;
         let update_fn: Box<infra::db::UpdateFn> = Box::new(|_value: Option<Bytes>| {
-            Err(infra::errors::Error::Message("Intentional error".to_string()))
+            Err(infra::errors::Error::Message(
+                "Intentional error".to_string(),
+            ))
         });
-        db_clone.get_for_update(&key1, false, Some(0), update_fn).await
+        db_clone
+            .get_for_update(&key1, false, Some(0), update_fn)
+            .await
     };
 
     assert!(task1_result.is_err(), "Task 1 should fail with error");
@@ -968,11 +1039,12 @@ pub async fn test_lock_released_on_update_fn_error_impl(db: &MysqlDb, prefix: &s
 
     let start = std::time::Instant::now();
     let task2_result = {
-        let db_clone = MysqlDb::new();
-        let update_fn: Box<infra::db::UpdateFn> = Box::new(|_value: Option<Bytes>| {
-            Ok(Some((Some(Bytes::from("task2_success")), None)))
-        });
-        db_clone.get_for_update(&key2, false, Some(0), update_fn).await
+        let db_clone = get_db().await;
+        let update_fn: Box<infra::db::UpdateFn> =
+            Box::new(|_value: Option<Bytes>| Ok(Some((Some(Bytes::from("task2_success")), None))));
+        db_clone
+            .get_for_update(&key2, false, Some(0), update_fn)
+            .await
     };
     let elapsed = start.elapsed();
 
@@ -993,7 +1065,7 @@ pub async fn test_lock_released_on_update_fn_error_impl(db: &MysqlDb, prefix: &s
 }
 
 /// Test lock released on transaction error.
-pub async fn test_lock_released_on_transaction_error_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_lock_released_on_transaction_error_impl(db: &impl Db, prefix: &str) {
     let key = format!("/concurrent/{}/tx_error/key1", prefix);
 
     db.put(&key, Bytes::from("initial"), false, Some(0))
@@ -1002,7 +1074,9 @@ pub async fn test_lock_released_on_transaction_error_impl(db: &MysqlDb, prefix: 
 
     let result = {
         let update_fn: Box<infra::db::UpdateFn> = Box::new(|_value: Option<Bytes>| {
-            Err(infra::errors::Error::Message("Simulated transaction error".to_string()))
+            Err(infra::errors::Error::Message(
+                "Simulated transaction error".to_string(),
+            ))
         });
         db.get_for_update(&key, false, Some(0), update_fn).await
     };
@@ -1010,9 +1084,8 @@ pub async fn test_lock_released_on_transaction_error_impl(db: &MysqlDb, prefix: 
 
     let start = std::time::Instant::now();
     let result2 = {
-        let update_fn: Box<infra::db::UpdateFn> = Box::new(|_value: Option<Bytes>| {
-            Ok(Some((Some(Bytes::from("recovered")), None)))
-        });
+        let update_fn: Box<infra::db::UpdateFn> =
+            Box::new(|_value: Option<Bytes>| Ok(Some((Some(Bytes::from("recovered")), None))));
         db.get_for_update(&key, false, Some(0), update_fn).await
     };
     let elapsed = start.elapsed();
@@ -1034,7 +1107,7 @@ pub async fn test_lock_released_on_transaction_error_impl(db: &MysqlDb, prefix: 
 
 /// Test lock contention fairness.
 /// Note: Reduced from 5 to 3 tasks for remote DB compatibility.
-pub async fn test_lock_contention_fairness_impl(db: &MysqlDb, prefix: &str, db_name: &str) {
+pub async fn test_lock_contention_fairness_impl(db: &impl Db, prefix: &str, db_name: &str) {
     let key = format!("/concurrent/{}/fairness/key1", prefix);
     let completion_order = Arc::new(std::sync::Mutex::new(Vec::new()));
 
@@ -1053,7 +1126,7 @@ pub async fn test_lock_contention_fairness_impl(db: &MysqlDb, prefix: &str, db_n
         handles.push(tokio::spawn(async move {
             tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
 
-            let db = MysqlDb::new();
+            let db = get_db().await;
             let tid = task_id;
             let order = order_clone.clone();
 
@@ -1079,13 +1152,16 @@ pub async fn test_lock_contention_fairness_impl(db: &MysqlDb, prefix: &str, db_n
     let order = completion_order.lock().unwrap();
     println!("✓ Lock contention fairness test completed");
     println!("  Completion order: {:?}", *order);
-    println!("  (Note: {} GET_LOCK may not guarantee strict FIFO)", db_name);
+    println!(
+        "  (Note: {} GET_LOCK may not guarantee strict FIFO)",
+        db_name
+    );
 
     assert_eq!(order.len(), num_tasks, "All tasks should complete");
 }
 
 /// Test concurrent insert of same new key.
-pub async fn test_concurrent_insert_same_new_key_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_concurrent_insert_same_new_key_impl(db: &impl Db, prefix: &str) {
     let key = format!("/concurrent/{}/new_insert/key1", prefix);
 
     let num_inserters = 3;
@@ -1097,18 +1173,24 @@ pub async fn test_concurrent_insert_same_new_key_impl(db: &MysqlDb, prefix: &str
         let count_clone = success_count.clone();
 
         handles.push(tokio::spawn(async move {
-            let db = MysqlDb::new();
+            let db = get_db().await;
             let iid = inserter_id;
 
             let update_fn: Box<infra::db::UpdateFn> = Box::new(move |value: Option<Bytes>| {
                 if value.is_none() {
-                    Ok(Some((Some(Bytes::from(format!("inserted_by_{}", iid))), None)))
+                    Ok(Some((
+                        Some(Bytes::from(format!("inserted_by_{}", iid))),
+                        None,
+                    )))
                 } else {
                     Ok(None)
                 }
             });
 
-            match db.get_for_update(&key_clone, false, Some(0), update_fn).await {
+            match db
+                .get_for_update(&key_clone, false, Some(0), update_fn)
+                .await
+            {
                 Ok(_) => {
                     count_clone.fetch_add(1, AtomicOrd::SeqCst);
                 }
@@ -1135,7 +1217,7 @@ pub async fn test_concurrent_insert_same_new_key_impl(db: &MysqlDb, prefix: &str
 }
 
 /// Test concurrent update with new key creation.
-pub async fn test_concurrent_update_with_new_key_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_concurrent_update_with_new_key_impl(db: &impl Db, prefix: &str) {
     let key = format!("/concurrent/{}/update_new/key1", prefix);
     let new_key = format!("/concurrent/{}/update_new/key2", prefix);
 
@@ -1149,7 +1231,7 @@ pub async fn test_concurrent_update_with_new_key_impl(db: &MysqlDb, prefix: &str
     let new_key2 = new_key.clone();
 
     let task1 = tokio::spawn(async move {
-        let db = MysqlDb::new();
+        let db = get_db().await;
         let update_fn: Box<infra::db::UpdateFn> = Box::new(move |_value: Option<Bytes>| {
             Ok(Some((
                 Some(Bytes::from("updated_by_1")),
@@ -1161,7 +1243,7 @@ pub async fn test_concurrent_update_with_new_key_impl(db: &MysqlDb, prefix: &str
 
     let task2 = tokio::spawn(async move {
         tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-        let db = MysqlDb::new();
+        let db = get_db().await;
         let update_fn: Box<infra::db::UpdateFn> = Box::new(move |_value: Option<Bytes>| {
             Ok(Some((
                 Some(Bytes::from("updated_by_2")),
@@ -1174,10 +1256,7 @@ pub async fn test_concurrent_update_with_new_key_impl(db: &MysqlDb, prefix: &str
     let r1 = task1.await.expect("Task 1 panicked");
     let r2 = task2.await.expect("Task 2 panicked");
 
-    assert!(
-        r1.is_ok() || r2.is_ok(),
-        "At least one task should succeed"
-    );
+    assert!(r1.is_ok() || r2.is_ok(), "At least one task should succeed");
 
     println!("✓ Concurrent update with new key test passed");
     println!("  Task 1 result: {:?}", r1.is_ok());
@@ -1185,7 +1264,7 @@ pub async fn test_concurrent_update_with_new_key_impl(db: &MysqlDb, prefix: &str
 }
 
 /// Test long running update_fn blocks other clients.
-pub async fn test_long_running_update_fn_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_long_running_update_fn_impl(db: &impl Db, prefix: &str) {
     let key = format!("/concurrent/{}/long_running/key1", prefix);
 
     db.put(&key, Bytes::from("start"), false, Some(0))
@@ -1197,36 +1276,50 @@ pub async fn test_long_running_update_fn_impl(db: &MysqlDb, prefix: &str) {
 
     let start_time = std::time::Instant::now();
 
+    let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+
     let task1 = tokio::spawn(async move {
-        let db = MysqlDb::new();
+        let db = get_db().await;
         let update_fn: Box<infra::db::UpdateFn> = Box::new(|_value: Option<Bytes>| {
-            std::thread::sleep(std::time::Duration::from_millis(200));
+            tx.send(()).unwrap();
+            // Force a task refresh; otherwise, new spawns may be blocked and not scheduled for
+            // execution.
+            tokio::task::block_in_place(|| {
+                std::thread::sleep(std::time::Duration::from_millis(200))
+            });
             Ok(Some((Some(Bytes::from("slow_update")), None)))
         });
         db.get_for_update(&key1, false, Some(0), update_fn).await
     });
 
     let task2 = tokio::spawn(async move {
-        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        rx.await.unwrap();
         let start = std::time::Instant::now();
-        let db = MysqlDb::new();
-        let update_fn: Box<infra::db::UpdateFn> = Box::new(|_value: Option<Bytes>| {
-            Ok(Some((Some(Bytes::from("fast_update")), None)))
-        });
+        let db = get_db().await;
+        let update_fn: Box<infra::db::UpdateFn> =
+            Box::new(|_value: Option<Bytes>| Ok(Some((Some(Bytes::from("fast_update")), None))));
         let result = db.get_for_update(&key2, false, Some(0), update_fn).await;
         (result, start.elapsed())
     });
 
-    task1.await.expect("Task 1 panicked").expect("Task 1 failed");
+    task1
+        .await
+        .expect("Task 1 panicked")
+        .expect("Task 1 failed");
     let (task2_result, task2_wait) = task2.await.expect("Task 2 panicked");
     task2_result.expect("Task 2 failed");
 
     let total_time = start_time.elapsed();
 
     assert!(
-        task2_wait.as_millis() >= 100,
+        task2_wait.as_millis() >= 200,
         "Task 2 should have waited for lock. Wait time: {:?}",
         task2_wait
+    );
+    assert!(
+        total_time.as_millis() >= 200,
+        "Total time should reflect long update_fn. Total time: {:?}",
+        total_time
     );
 
     println!("✓ Long running update_fn test passed");
@@ -1235,7 +1328,7 @@ pub async fn test_long_running_update_fn_impl(db: &MysqlDb, prefix: &str) {
 }
 
 /// Test concurrent updates with different start_dt.
-pub async fn test_concurrent_with_different_start_dt_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_concurrent_with_different_start_dt_impl(db: &impl Db, prefix: &str) {
     let key = format!("/concurrent/{}/versions/key1", prefix);
 
     db.put(&key, Bytes::from("v100"), false, Some(100))
@@ -1249,7 +1342,7 @@ pub async fn test_concurrent_with_different_start_dt_impl(db: &MysqlDb, prefix: 
     let key2 = key.clone();
 
     let task1 = tokio::spawn(async move {
-        let db = MysqlDb::new();
+        let db = get_db().await;
         let update_fn: Box<infra::db::UpdateFn> = Box::new(|value: Option<Bytes>| {
             assert_eq!(value, Some(Bytes::from("v100")));
             Ok(Some((Some(Bytes::from("v100_updated")), None)))
@@ -1258,7 +1351,7 @@ pub async fn test_concurrent_with_different_start_dt_impl(db: &MysqlDb, prefix: 
     });
 
     let task2 = tokio::spawn(async move {
-        let db = MysqlDb::new();
+        let db = get_db().await;
         let update_fn: Box<infra::db::UpdateFn> = Box::new(|value: Option<Bytes>| {
             assert_eq!(value, Some(Bytes::from("v200")));
             Ok(Some((Some(Bytes::from("v200_updated")), None)))
@@ -1266,15 +1359,28 @@ pub async fn test_concurrent_with_different_start_dt_impl(db: &MysqlDb, prefix: 
         db.get_for_update(&key2, false, Some(200), update_fn).await
     });
 
-    task1.await.expect("Task 1 panicked").expect("Task 1 failed");
-    task2.await.expect("Task 2 panicked").expect("Task 2 failed");
+    task1
+        .await
+        .expect("Task 1 panicked")
+        .expect("Task 1 failed");
+    task2
+        .await
+        .expect("Task 2 panicked")
+        .expect("Task 2 failed");
+
+    let final_val = db.get(&key).await.expect("Get with start_dt 100 failed");
+    assert_eq!(
+        final_val,
+        Bytes::from("v200_updated"),
+        "Value at start_dt 200 should be updated"
+    );
 
     println!("✓ Concurrent with different start_dt test passed");
 }
 
 /// Test high concurrency with multiple clients.
 /// Note: Reduced from 20×3=60 to 5×2=10 iterations for remote DB compatibility.
-pub async fn test_high_concurrency_20_clients_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_high_concurrency_20_clients_impl(db: &impl Db, prefix: &str) {
     let key = format!("/concurrent/{}/stress/key1", prefix);
 
     db.put(&key, Bytes::from("0"), false, Some(0))
@@ -1290,7 +1396,7 @@ pub async fn test_high_concurrency_20_clients_impl(db: &MysqlDb, prefix: &str) {
     for _worker_id in 0..num_workers {
         let key_clone = key.clone();
         handles.push(tokio::spawn(async move {
-            let db = MysqlDb::new();
+            let db = get_db().await;
 
             for _iter in 0..iterations_per_worker {
                 let update_fn: Box<infra::db::UpdateFn> = Box::new(|value: Option<Bytes>| {
@@ -1335,7 +1441,7 @@ pub async fn test_high_concurrency_20_clients_impl(db: &MysqlDb, prefix: &str) {
 
 /// Test rapid sequential updates.
 /// Note: Reduced from 50 to 10 iterations for remote DB compatibility.
-pub async fn test_rapid_sequential_updates_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_rapid_sequential_updates_impl(db: &impl Db, prefix: &str) {
     let key = format!("/concurrent/{}/rapid/key1", prefix);
 
     db.put(&key, Bytes::from("0"), false, Some(0))
@@ -1371,12 +1477,15 @@ pub async fn test_rapid_sequential_updates_impl(db: &MysqlDb, prefix: &str) {
     println!("✓ Rapid sequential updates test passed");
     println!("  Updates: {}", num_updates);
     println!("  Total time: {:?}", total_time);
-    println!("  Avg time per update: {:?}", total_time / num_updates as u32);
+    println!(
+        "  Avg time per update: {:?}",
+        total_time / num_updates as u32
+    );
 }
 
 /// Test mixed read-write concurrency.
 /// Note: Reduced writers from 5 to 3, readers from 10 to 5 for remote DB compatibility.
-pub async fn test_mixed_read_write_concurrency_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_mixed_read_write_concurrency_impl(db: &impl Db, prefix: &str) {
     let key = format!("/concurrent/{}/mixed/key1", prefix);
 
     db.put(&key, Bytes::from("0"), false, Some(0))
@@ -1390,7 +1499,7 @@ pub async fn test_mixed_read_write_concurrency_impl(db: &MysqlDb, prefix: &str) 
     for writer_id in 0..num_writers {
         let key_clone = key.clone();
         handles.push(tokio::spawn(async move {
-            let db = MysqlDb::new();
+            let db = get_db().await;
 
             let update_fn: Box<infra::db::UpdateFn> = Box::new(|value: Option<Bytes>| {
                 let val: i32 = value
@@ -1410,7 +1519,7 @@ pub async fn test_mixed_read_write_concurrency_impl(db: &MysqlDb, prefix: &str) 
     for reader_id in 0..num_readers {
         let key_clone = key.clone();
         handles.push(tokio::spawn(async move {
-            let db = MysqlDb::new();
+            let db = get_db().await;
             let _ = db.get(&key_clone).await;
             ("reader", reader_id)
         }));
@@ -1429,11 +1538,14 @@ pub async fn test_mixed_read_write_concurrency_impl(db: &MysqlDb, prefix: &str) 
     assert_eq!(final_count, num_writers as i32);
 
     println!("✓ Mixed read-write concurrency test passed");
-    println!("  Final counter: {} (expected {})", final_count, num_writers);
+    println!(
+        "  Final counter: {} (expected {})",
+        final_count, num_writers
+    );
 }
 
 /// Test concurrent operations across connection pools.
-pub async fn test_concurrent_across_connection_pools_impl(db: &MysqlDb, prefix: &str) {
+pub async fn test_concurrent_across_connection_pools_impl(db: &impl Db, prefix: &str) {
     let key = format!("/concurrent/{}/pools/key1", prefix);
 
     db.put(&key, Bytes::from("0"), false, Some(0))
@@ -1446,7 +1558,7 @@ pub async fn test_concurrent_across_connection_pools_impl(db: &MysqlDb, prefix: 
     for pool_id in 0..num_pools {
         let key_clone = key.clone();
         handles.push(tokio::spawn(async move {
-            let db = MysqlDb::new();
+            let db = get_db().await;
             let pid = pool_id;
 
             let update_fn: Box<infra::db::UpdateFn> = Box::new(move |value: Option<Bytes>| {

@@ -1,0 +1,67 @@
+[
+  {
+    "id": 29,
+    "org": "default",
+    "stream": "default/metrics/container_filesystem_available",
+    "file_num": 162,
+    "min_ts": 1765940816157834,
+    "max_ts": 1769558398535178,
+    "records": 29493939,
+    "original_size": 27556983387,
+    "compressed_size": 288330337,
+    "index_size": 138581815,
+    "is_recent": false
+  },
+  {
+    "id": 103,
+    "org": "default",
+    "stream": "default/metrics/system_cpu_load_average_5m",
+    "file_num": 122,
+    "min_ts": 1765940816094209,
+    "max_ts": 1769558398438389,
+    "records": 817871,
+    "original_size": 447795011,
+    "compressed_size": 4205623,
+    "index_size": 0,
+    "is_recent": false
+  },
+  {
+    "id": 15,
+    "org": "default",
+    "stream": "default/metrics/system_network_connections",
+    "file_num": 122,
+    "min_ts": 1765940816086101,
+    "max_ts": 1769558398438673,
+    "records": 9814450,
+    "original_size": 6584068006,
+    "compressed_size": 20518892,
+    "index_size": 0,
+    "is_recent": false
+  },
+  {
+    "id": 36,
+    "org": "default",
+    "stream": "default/metrics/container_fs_writes_total",
+    "file_num": 442,
+    "min_ts": 1765940751003000,
+    "max_ts": 1769558399972000,
+    "records": 152318023,
+    "original_size": 159363118089,
+    "compressed_size": 1945065402,
+    "index_size": 224449322,
+    "is_recent": false
+  },
+  {
+    "id": 8,
+    "org": "default",
+    "stream": "default/metrics/k8s_node_filesystem_capacity",
+    "file_num": 122,
+    "min_ts": 1765940816157834,
+    "max_ts": 1769558398535178,
+    "records": 717471,
+    "original_size": 394493643,
+    "compressed_size": 2887942,
+    "index_size": 0,
+    "is_recent": false
+  }
+]

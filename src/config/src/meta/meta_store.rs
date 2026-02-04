@@ -23,6 +23,7 @@ pub enum MetaStore {
     MySQL,
     PostgreSQL,
     OceanBase,
+    OceanBaseLegacy,
 }
 
 impl From<&str> for MetaStore {
@@ -33,6 +34,7 @@ impl From<&str> for MetaStore {
             "mysql" => Self::MySQL,
             "postgres" | "postgresql" => Self::PostgreSQL,
             "oceanbase" | "ob" => Self::OceanBase,
+            "oceanbaselegacy" | "oblegacy" => Self::OceanBaseLegacy,
             _ => Self::Sqlite,
         }
     }
@@ -52,6 +54,7 @@ impl std::fmt::Display for MetaStore {
             Self::MySQL => write!(f, "mysql"),
             Self::PostgreSQL => write!(f, "postgresql"),
             Self::OceanBase => write!(f, "oceanbase"),
+            Self::OceanBaseLegacy => write!(f, "oceanbaselegacy"),
         }
     }
 }
@@ -69,11 +72,20 @@ mod tests {
         assert_eq!(MetaStore::from("postgresql"), MetaStore::PostgreSQL);
         assert_eq!(MetaStore::from("oceanbase"), MetaStore::OceanBase);
         assert_eq!(MetaStore::from("ob"), MetaStore::OceanBase);
+        assert_eq!(
+            MetaStore::from("oceanbaselegacy"),
+            MetaStore::OceanBaseLegacy
+        );
+        assert_eq!(MetaStore::from("oblegacy"), MetaStore::OceanBaseLegacy);
 
         // Case insensitive
         assert_eq!(MetaStore::from("SQLITE"), MetaStore::Sqlite);
         assert_eq!(MetaStore::from("OCEANBASE"), MetaStore::OceanBase);
-
+        assert_eq!(
+            MetaStore::from("OCEANBASELEGACY"),
+            MetaStore::OceanBaseLegacy
+        );
+        assert_eq!(MetaStore::from("OBLEGACY"), MetaStore::OceanBaseLegacy);
         // Unknown values default to Sqlite
         assert_eq!(MetaStore::from("unknown"), MetaStore::Sqlite);
     }
@@ -90,6 +102,7 @@ mod tests {
         assert_eq!(MetaStore::MySQL.to_string(), "mysql");
         assert_eq!(MetaStore::PostgreSQL.to_string(), "postgresql");
         assert_eq!(MetaStore::OceanBase.to_string(), "oceanbase");
+        assert_eq!(MetaStore::OceanBaseLegacy.to_string(), "oceanbaselegacy");
     }
 
     #[test]

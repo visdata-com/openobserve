@@ -23,6 +23,7 @@ use once_cell::sync::Lazy;
 use crate::errors::Result;
 
 pub mod mysql;
+pub mod oceanbase;
 pub mod postgres;
 pub mod sqlite;
 
@@ -33,6 +34,8 @@ pub fn connect() -> Box<dyn Scheduler> {
     match config::get_config().common.meta_store.as_str().into() {
         MetaStore::MySQL => Box::<mysql::MySqlScheduler>::default(),
         MetaStore::PostgreSQL => Box::<postgres::PostgresScheduler>::default(),
+        MetaStore::OceanBase => Box::<oceanbase::OceanBaseScheduler>::default(),
+        MetaStore::OceanBaseLegacy => Box::new(oceanbase::OceanBaseScheduler::new_legacy()),
         _ => Box::<sqlite::SqliteScheduler>::default(),
     }
 }

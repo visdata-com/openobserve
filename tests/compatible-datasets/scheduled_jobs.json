@@ -1,0 +1,30 @@
+[
+  {
+    "id": 2,
+    "org": "default",
+    "module": 1,
+    "module_key": "36xpJ0qnI9UmqzApRxHMs5pctfT",
+    "is_realtime": false,
+    "is_silenced": true,
+    "status": 0,
+    "start_time": 1769044412114254,
+    "end_time": 1769044502114254,
+    "retries": 0,
+    "next_run_at": 1769649212290712,
+    "data": "{\"tolerance\":0,\"last_satisfied_at\":1766019602389188}"
+  },
+  {
+    "id": 1,
+    "org": "_meta",
+    "module": 3,
+    "module_key": "QueryRecommendations",
+    "is_realtime": false,
+    "is_silenced": false,
+    "status": 0,
+    "start_time": 1769564732153076,
+    "end_time": 1769564822153076,
+    "retries": 3,
+    "next_run_at": 1769568332201506,
+    "data": ""
+  }
+]

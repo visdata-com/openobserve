@@ -46,6 +46,273 @@ impl MysqlFileList {
     pub fn new() -> Self {
         Self {}
     }
+
+    pub async fn query_deleted_inner(
+        &self,
+        org_id: &str,
+        time_max: i64,
+        limit: i64,
+    ) -> Result<Vec<FileListDeleted>> {
+        let pool = CLIENT.clone();
+        let mut tx = pool.begin().await?;
+
+        DB_QUERY_NUMS
+            .with_label_values(&["select", "file_list_deleted"])
+            .inc();
+        let items: Vec<FileListDeleted> = match sqlx::query_as::<_, super::FileDeletedRecord>(
+            r#"SELECT id, account, stream, date, file, index_file, flattened FROM file_list_deleted WHERE org = ? AND created_at < ? ORDER BY created_at ASC LIMIT ?;"#,
+        )
+        .bind(org_id)
+        .bind(time_max)
+        .bind(limit)
+        .fetch_all(&mut *tx)
+        .await
+        {
+            Ok(v) => v
+                .iter()
+                .map(|r| FileListDeleted {
+                    id: r.id,
+                    account: r.account.to_string(),
+                    file: format!("files/{}/{}/{}", r.stream, r.date, r.file),
+                    index_file: r.index_file,
+                    flattened: r.flattened,
+                })
+                .collect(),
+            Err(e) => {
+                if let Err(e2) = tx.rollback().await {
+                    log::error!("[MYSQL] rollback select query_deleted for update error: {e2}");
+                }
+                return Err(e.into());
+            }
+        };
+
+        // update file created_at to NOW to avoid these files being deleted again
+        let ids = items.iter().map(|r| r.id.to_string()).collect::<Vec<_>>();
+        if ids.is_empty() {
+            if let Err(e) = tx.rollback().await {
+                log::error!("[MYSQL] rollback select query_deleted error: {e}");
+            }
+            return Ok(Vec::new());
+        }
+        let sql = format!(
+            "UPDATE file_list_deleted SET created_at = ? WHERE id IN ({});",
+            ids.join(",")
+        );
+        let now = now_micros();
+        DB_QUERY_NUMS
+            .with_label_values(&["update", "file_list_deleted"])
+            .inc();
+        let ret = match sqlx::query(&sql).bind(now).execute(&mut *tx).await {
+            Ok(v) => v,
+            Err(e) => {
+                if let Err(e2) = tx.rollback().await {
+                    log::error!("[MYSQL] rollback update query_deleted status error: {e2}");
+                }
+                return Err(e.into());
+            }
+        };
+        if ret.rows_affected() != ids.len() as u64 {
+            log::warn!(
+                "[MYSQL] update query_deleted error: query_deleted rows affected: {}, expected: {}, try again later",
+                ret.rows_affected(),
+                ids.len()
+            );
+            if let Err(e) = tx.rollback().await {
+                log::error!("[MYSQL] rollback update query_deleted status error: {e}");
+            }
+            return Ok(Vec::new());
+        }
+
+        if let Err(e) = tx.commit().await {
+            log::error!("[MYSQL] commit select query_deleted error: {e}");
+            return Err(e.into());
+        }
+        Ok(items)
+    }
+
+    pub async fn get_pending_jobs_inner(
+        &self,
+        node: &str,
+        limit: i64,
+    ) -> Result<Vec<super::MergeJobRecord>> {
+        let pool = CLIENT.clone();
+        let mut tx = pool.begin().await?;
+        // get pending jobs group by stream and order by num desc
+        DB_QUERY_NUMS
+            .with_label_values(&["select", "file_list_jobs"])
+            .inc();
+        let pending = match sqlx::query_as::<_, super::MergeJobPendingRecord>(
+            r#"
+SELECT stream, max(id) as id, CAST(COUNT(*) AS SIGNED) AS num
+    FROM file_list_jobs
+    WHERE status = ?
+    GROUP BY stream
+    ORDER BY num DESC
+    LIMIT ?;"#,
+        )
+        .bind(super::FileListJobStatus::Pending)
+        .bind(limit)
+        .fetch_all(&mut *tx)
+        .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                if let Err(e2) = tx.rollback().await {
+                    log::error!("[MYSQL] rollback get_pending_jobs for update error: {e2}");
+                }
+                return Err(e.into());
+            }
+        };
+
+        let ids = pending.iter().map(|r| r.id.to_string()).collect::<Vec<_>>();
+        if ids.is_empty() {
+            if let Err(e) = tx.rollback().await {
+                log::error!("[MYSQL] rollback get_pending_jobs error: {e}");
+            }
+            return Ok(Vec::new());
+        }
+        let sql = format!(
+            "UPDATE file_list_jobs SET status = ?, node = ?, started_at = ?, updated_at = ? WHERE id IN ({});",
+            ids.join(",")
+        );
+        let now = now_micros();
+        DB_QUERY_NUMS
+            .with_label_values(&["update", "file_list_jobs"])
+            .inc();
+        if let Err(e) = sqlx::query(&sql)
+            .bind(super::FileListJobStatus::Running)
+            .bind(node)
+            .bind(now)
+            .bind(now)
+            .execute(&mut *tx)
+            .await
+        {
+            if let Err(e2) = tx.rollback().await {
+                log::error!("[MYSQL] rollback update get_pending_jobs status error: {e2}");
+            }
+            return Err(e.into());
+        }
+        // get jobs by ids
+        let sql = format!(
+            "SELECT * FROM file_list_jobs WHERE id IN ({});",
+            ids.join(",")
+        );
+        DB_QUERY_NUMS
+            .with_label_values(&["select", "file_list_jobs"])
+            .inc();
+        let ret = match sqlx::query_as::<_, super::MergeJobRecord>(&sql)
+            .fetch_all(&mut *tx)
+            .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                if let Err(e2) = tx.rollback().await {
+                    log::error!("[MYSQL] rollback get_pending_jobs by ids error: {e2}");
+                }
+                return Err(e.into());
+            }
+        };
+        if let Err(e) = tx.commit().await {
+            log::error!("[MYSQL] commit for get_pending_jobs error: {e}");
+            return Err(e.into());
+        }
+        Ok(ret)
+    }
+
+    pub async fn get_pending_dump_jobs_inner(
+        &self,
+        node: &str,
+        limit: i64,
+    ) -> Result<Vec<(i64, String, i64)>> {
+        let pool = CLIENT.clone();
+        let mut tx = pool.begin().await?;
+
+        DB_QUERY_NUMS
+            .with_label_values(&["select", "file_list_jobs"])
+            .inc();
+        let pending = match sqlx::query_as::<_, super::MergeJobPendingRecord>(
+            r#"
+SELECT stream, max(id) as id, CAST(COUNT(*) AS SIGNED) AS num
+    FROM file_list_jobs
+    WHERE status = ?
+    GROUP BY stream
+    ORDER BY num DESC
+    LIMIT ?;"#,
+        )
+        .bind(super::FileListJobStatus::Pending)
+        .bind(limit)
+        .fetch_all(&mut *tx)
+        .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                if let Err(e2) = tx.rollback().await {
+                    log::error!("[MYSQL] rollback get_pending_dump_jobs for update error: {e2}");
+                }
+                return Err(e.into());
+            }
+        };
+
+        let ids = pending.iter().map(|r| r.id.to_string()).collect::<Vec<_>>();
+        if ids.is_empty() {
+            if let Err(e) = tx.rollback().await {
+                log::error!("[MYSQL] rollback get_pending_dump_jobs error: {e}");
+            }
+            return Ok(Vec::new());
+        }
+        let sql = format!(
+            "UPDATE file_list_jobs SET status = ?, node = ?, started_at = ?, updated_at = ? WHERE id IN ({});",
+            ids.join(",")
+        );
+        let now = now_micros();
+        DB_QUERY_NUMS
+            .with_label_values(&["update", "file_list_jobs"])
+            .inc();
+        if let Err(e) = sqlx::query(&sql)
+            .bind(super::FileListJobStatus::Running)
+            .bind(node)
+            .bind(now)
+            .bind(now)
+            .execute(&mut *tx)
+            .await
+        {
+            if let Err(e2) = tx.rollback().await {
+                log::error!("[MYSQL] rollback update get_pending_dump_jobs status error: {e2}");
+            }
+            return Err(e.into());
+        }
+
+        // get jobs by ids
+        let sql = format!(
+            "SELECT id, stream, started_at FROM file_list_jobs WHERE id IN ({});",
+            ids.join(",")
+        );
+        DB_QUERY_NUMS
+            .with_label_values(&["select", "file_list_jobs"])
+            .inc();
+        let ret = match sqlx::query(&sql).fetch_all(&mut *tx).await {
+            Ok(v) => v,
+            Err(e) => {
+                if let Err(e2) = tx.rollback().await {
+                    log::error!("[MYSQL] rollback get_pending_dump_jobs by ids error: {e2}");
+                }
+                return Err(e.into());
+            }
+        };
+        let mut out = Vec::with_capacity(ret.len());
+        for r in ret {
+            let id = r.try_get::<i64, &str>("id").unwrap_or_default();
+            let stream = r.try_get::<String, &str>("stream").unwrap_or_default();
+            let started_at = r.try_get::<i64, &str>("started_at").unwrap_or_default();
+            out.push((id, stream, started_at));
+        }
+
+        if let Err(e) = tx.commit().await {
+            log::error!("[MYSQL] commit for get_pending_dump_jobs error: {e}");
+            return Err(e.into());
+        }
+        Ok(out)
+    }
 }
 
 impl Default for MysqlFileList {
@@ -289,7 +556,7 @@ impl super::FileList for MysqlFileList {
         let start = std::time::Instant::now();
         let ret = sqlx::query_as::<_, super::FileRecord>(
             r#"
-SELECT min_ts, max_ts, records, original_size, compressed_size, index_size, flattened
+SELECT min_ts, max_ts, records, original_size, compressed_size, index_size, flattened, file, date
     FROM file_list WHERE stream = ? AND date = ? AND file = ?;
             "#,
         )
@@ -756,122 +1023,10 @@ SELECT date
             }
         };
 
-        let pool = CLIENT.clone();
-        let mut tx = match pool.begin().await {
-            Ok(tx) => tx,
-            Err(e) => {
-                if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                    log::error!("[MYSQL] unlock query_deleted error: {e}");
-                }
-                if let Err(e) = lock_tx.commit().await {
-                    log::error!("[MYSQL] commit for unlock query_deleted error: {e}");
-                }
-                return Err(e.into());
-            }
-        };
+        // call inner which performs SQL work inside its own transaction
+        let res = self.query_deleted_inner(org_id, time_max, limit).await;
 
-        DB_QUERY_NUMS
-            .with_label_values(&["select", "file_list_deleted"])
-            .inc();
-        let items: Vec<FileListDeleted> = match sqlx::query_as::<_, super::FileDeletedRecord>(
-            r#"SELECT id, account, stream, date, file, index_file, flattened FROM file_list_deleted WHERE org = ? AND created_at < ? ORDER BY created_at ASC LIMIT ?;"#,
-        )
-        .bind(org_id)
-        .bind(time_max)
-        .bind(limit)
-        .fetch_all(&mut *tx)
-        .await{
-            Ok(v) => v
-            .iter()
-            .map(|r| FileListDeleted {
-                id: r.id,
-                account: r.account.to_string(),
-                file: format!("files/{}/{}/{}", r.stream, r.date, r.file),
-                index_file: r.index_file,
-                flattened: r.flattened,
-            })
-            .collect(),
-            Err(e) => {
-                if let Err(e) = tx.rollback().await {
-                    log::error!(
-                        "[MYSQL] rollback select query_deleted for update error: {e}"
-                    );
-                }
-                DB_QUERY_NUMS
-                    .with_label_values(&["release_lock", ""])
-                    .inc();
-                if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                    log::error!("[MYSQL] unlock query_deleted error: {e}");
-                }
-                if let Err(e) = lock_tx.commit().await {
-                    log::error!("[MYSQL] commit for unlock query_deleted error: {e}");
-                }
-                return Err(e.into());
-            }
-        };
-
-        // update file created_at to NOW to avoid these files being deleted again
-        let ids = items.iter().map(|r| r.id.to_string()).collect::<Vec<_>>();
-        if ids.is_empty() {
-            if let Err(e) = tx.rollback().await {
-                log::error!("[MYSQL] rollback select query_deleted error: {e}");
-            }
-            DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-            if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                log::error!("[MYSQL] unlock query_deleted error: {e}");
-            }
-            if let Err(e) = lock_tx.commit().await {
-                log::error!("[MYSQL] commit for unlock query_deleted error: {e}");
-            }
-            return Ok(Vec::new());
-        }
-        let sql = format!(
-            "UPDATE file_list_deleted SET created_at = ? WHERE id IN ({});",
-            ids.join(",")
-        );
-        let now = config::utils::time::now_micros();
-        DB_QUERY_NUMS
-            .with_label_values(&["update", "file_list_deleted"])
-            .inc();
-        let ret = match sqlx::query(&sql).bind(now).execute(&mut *tx).await {
-            Ok(v) => v,
-            Err(e) => {
-                if let Err(e) = tx.rollback().await {
-                    log::error!("[MYSQL] rollback update query_deleted status error: {e}");
-                }
-                DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-                if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                    log::error!("[MYSQL] unlock query_deleted error: {e}");
-                }
-                if let Err(e) = lock_tx.commit().await {
-                    log::error!("[MYSQL] commit for unlock query_deleted error: {e}");
-                }
-                return Err(e.into());
-            }
-        };
-        if ret.rows_affected() != ids.len() as u64 {
-            log::warn!(
-                "[MYSQL] update query_deleted error: query_deleted rows affected: {}, expected: {}, try again later",
-                ret.rows_affected(),
-                ids.len()
-            );
-            if let Err(e) = tx.rollback().await {
-                log::error!("[MYSQL] rollback update query_deleted status error: {e}");
-            }
-            DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-            if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                log::error!("[MYSQL] unlock query_deleted error: {e}");
-            }
-            if let Err(e) = lock_tx.commit().await {
-                log::error!("[MYSQL] commit for unlock query_deleted error: {e}");
-            }
-            return Ok(Vec::new());
-        }
-
-        if let Err(e) = tx.commit().await {
-            log::error!("[MYSQL] commit select query_deleted error: {e}");
-            return Err(e.into());
-        }
+        // release lock
         DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
         if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
             log::error!("[MYSQL] unlock query_deleted error: {e}");
@@ -879,7 +1034,8 @@ SELECT date
         if let Err(e) = lock_tx.commit().await {
             log::error!("[MYSQL] commit for unlock query_deleted error: {e}");
         }
-        Ok(items)
+
+        res
     }
 
     async fn list_deleted(&self) -> Result<Vec<FileListDeleted>> {
@@ -1331,126 +1487,10 @@ ON DUPLICATE KEY UPDATE
             }
         };
 
-        let pool = CLIENT.clone();
-        let mut tx = match pool.begin().await {
-            Ok(tx) => tx,
-            Err(e) => {
-                if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                    log::error!("[MYSQL] unlock get_pending_jobs error: {e}");
-                }
-                if let Err(e) = lock_tx.commit().await {
-                    log::error!("[MYSQL] commit for unlock get_pending_jobs error: {e}");
-                }
-                return Err(e.into());
-            }
-        };
-        // get pending jobs group by stream and order by num desc
-        DB_QUERY_NUMS
-            .with_label_values(&["select", "file_list_jobs"])
-            .inc();
-        let ret = match sqlx::query_as::<_, super::MergeJobPendingRecord>(
-            r#"
-SELECT stream, max(id) as id, CAST(COUNT(*) AS SIGNED) AS num
-    FROM file_list_jobs
-    WHERE status = ?
-    GROUP BY stream
-    ORDER BY num DESC
-    LIMIT ?;"#,
-        )
-        .bind(super::FileListJobStatus::Pending)
-        .bind(limit)
-        .fetch_all(&mut *tx)
-        .await
-        {
-            Ok(v) => v,
-            Err(e) => {
-                if let Err(e) = tx.rollback().await {
-                    log::error!("[MYSQL] rollback get_pending_jobs for update error: {e}");
-                }
-                DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-                if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                    log::error!("[MYSQL] unlock get_pending_jobs error: {e}");
-                }
-                if let Err(e) = lock_tx.commit().await {
-                    log::error!("[MYSQL] commit for unlock get_pending_jobs error: {e}");
-                }
-                return Err(e.into());
-            }
-        };
-        // update jobs status to running
-        let ids = ret.iter().map(|r| r.id.to_string()).collect::<Vec<_>>();
-        if ids.is_empty() {
-            if let Err(e) = tx.rollback().await {
-                log::error!("[MYSQL] rollback get_pending_jobs error: {e}");
-            }
-            DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-            if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                log::error!("[MYSQL] unlock get_pending_jobs error: {e}");
-            }
-            if let Err(e) = lock_tx.commit().await {
-                log::error!("[MYSQL] commit for unlock get_pending_jobs error: {e}");
-            }
-            return Ok(Vec::new());
-        }
-        let sql = format!(
-            "UPDATE file_list_jobs SET status = ?, node = ?, started_at = ?, updated_at = ? WHERE id IN ({});",
-            ids.join(",")
-        );
-        let now = config::utils::time::now_micros();
-        DB_QUERY_NUMS
-            .with_label_values(&["update", "file_list_jobs"])
-            .inc();
-        if let Err(e) = sqlx::query(&sql)
-            .bind(super::FileListJobStatus::Running)
-            .bind(node)
-            .bind(now)
-            .bind(now)
-            .execute(&mut *tx)
-            .await
-        {
-            if let Err(e) = tx.rollback().await {
-                log::error!("[MYSQL] rollback update get_pending_jobs status error: {e}");
-            }
-            DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-            if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                log::error!("[MYSQL] unlock get_pending_jobs error: {e}");
-            }
-            if let Err(e) = lock_tx.commit().await {
-                log::error!("[MYSQL] commit for unlock get_pending_jobs error: {e}");
-            }
-            return Err(e.into());
-        }
-        // get jobs by ids
-        let sql = format!(
-            "SELECT * FROM file_list_jobs WHERE id IN ({});",
-            ids.join(",")
-        );
-        DB_QUERY_NUMS
-            .with_label_values(&["select", "file_list_jobs"])
-            .inc();
-        let ret = match sqlx::query_as::<_, super::MergeJobRecord>(&sql)
-            .fetch_all(&mut *tx)
-            .await
-        {
-            Ok(v) => v,
-            Err(e) => {
-                if let Err(e) = tx.rollback().await {
-                    log::error!("[MYSQL] rollback get_pending_jobs by ids error: {e}");
-                }
-                DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-                if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                    log::error!("[MYSQL] unlock get_pending_jobs error: {e}");
-                }
-                if let Err(e) = lock_tx.commit().await {
-                    log::error!("[MYSQL] commit for unlock get_pending_jobs error: {e}");
-                }
-                return Err(e.into());
-            }
-        };
-        if let Err(e) = tx.commit().await {
-            log::error!("[MYSQL] commit for get_pending_jobs error: {e}");
-            return Err(e.into());
-        }
+        // call inner which performs SQL work inside its own transaction
+        let res = self.get_pending_jobs_inner(node, limit).await;
+
+        // release lock
         DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
         if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
             log::error!("[MYSQL] unlock get_pending_jobs error: {e}");
@@ -1458,7 +1498,8 @@ SELECT stream, max(id) as id, CAST(COUNT(*) AS SIGNED) AS num
         if let Err(e) = lock_tx.commit().await {
             log::error!("[MYSQL] commit for unlock get_pending_jobs error: {e}");
         }
-        Ok(ret)
+
+        res
     }
 
     async fn set_job_pending(&self, ids: &[i64]) -> Result<()> {
@@ -1655,97 +1696,10 @@ SELECT stream, max(id) as id, CAST(COUNT(*) AS SIGNED) AS num
             }
         };
 
-        let pool = CLIENT.clone();
-        let mut tx = match pool.begin().await {
-            Ok(tx) => tx,
-            Err(e) => {
-                if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                    log::error!("[MYSQL] unlock get_pending_dump_jobs error: {e}");
-                }
-                if let Err(e) = lock_tx.commit().await {
-                    log::error!("[MYSQL] commit for unlock get_pending_dump_jobs error: {e}");
-                }
-                return Err(e.into());
-            }
-        };
-        // get pending dump jobs by updated_at asc
-        DB_QUERY_NUMS
-            .with_label_values(&["select", "file_list_jobs"])
-            .inc();
-        let ret = match sqlx::query_as::<_, (i64, String, i64)>(
-            r#"SELECT id, stream, offsets FROM file_list_jobs WHERE status = ? AND dumped = ? AND node = '' ORDER BY updated_at ASC limit ?"#,
-        )
-        .bind(super::FileListJobStatus::Done)
-        .bind(false)
-        .bind(limit)
-        .fetch_all(&mut *tx)
-        .await
-        {
-            Ok(v) => v,
-            Err(e) => {
-                if let Err(e) = tx.rollback().await {
-                    log::error!(
-                        "[MYSQL] rollback get_pending_dump_jobs for update error: {e}"
-                    );
-                }
-                DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-                if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                    log::error!("[MYSQL] unlock get_pending_dump_jobs error: {e}");
-                }
-                if let Err(e) = lock_tx.commit().await {
-                    log::error!("[MYSQL] commit for unlock get_pending_dump_jobs error: {e}");
-                }
-                return Err(e.into());
-            }
-        };
+        // call inner which performs SQL work inside its own transaction
+        let res = self.get_pending_dump_jobs_inner(node, limit).await;
 
-        // update jobs node, created_at and updated_at
-        let ids = ret.iter().map(|r| r.0.to_string()).collect::<Vec<_>>();
-        if ids.is_empty() {
-            if let Err(e) = tx.rollback().await {
-                log::error!("[MYSQL] rollback get_pending_dump_jobs error: {e}");
-            }
-            DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-            if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                log::error!("[MYSQL] unlock get_pending_dump_jobs error: {e}");
-            }
-            if let Err(e) = lock_tx.commit().await {
-                log::error!("[MYSQL] commit for unlock get_pending_dump_jobs error: {e}");
-            }
-            return Ok(Vec::new());
-        }
-        let sql = format!(
-            "UPDATE file_list_jobs SET node = ?, started_at = ?, updated_at = ? WHERE id IN ({});",
-            ids.join(",")
-        );
-        let now = config::utils::time::now_micros();
-        DB_QUERY_NUMS
-            .with_label_values(&["update", "file_list_jobs"])
-            .inc();
-        if let Err(e) = sqlx::query(&sql)
-            .bind(node)
-            .bind(now)
-            .bind(now)
-            .execute(&mut *tx)
-            .await
-        {
-            if let Err(e) = tx.rollback().await {
-                log::error!("[MYSQL] rollback update get_pending_dump_jobs status error: {e}");
-            }
-            DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
-            if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                log::error!("[MYSQL] unlock get_pending_dump_jobs error: {e}");
-            }
-            if let Err(e) = lock_tx.commit().await {
-                log::error!("[MYSQL] commit for unlock get_pending_dump_jobs error: {e}");
-            }
-            return Err(e.into());
-        }
-        // commit transaction
-        if let Err(e) = tx.commit().await {
-            log::error!("[MYSQL] commit for get_pending_dump_jobs error: {e}");
-            return Err(e.into());
-        }
+        // release lock
         DB_QUERY_NUMS.with_label_values(&["release_lock", ""]).inc();
         if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
             log::error!("[MYSQL] unlock get_pending_dump_jobs error: {e}");
@@ -1754,7 +1708,7 @@ SELECT stream, max(id) as id, CAST(COUNT(*) AS SIGNED) AS num
             log::error!("[MYSQL] commit for unlock get_pending_dump_jobs error: {e}");
         }
 
-        Ok(ret)
+        res
     }
 
     async fn set_job_dumped_status(&self, ids: &[i64], dumped: bool) -> Result<()> {

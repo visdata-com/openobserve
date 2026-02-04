@@ -17,3 +17,4 @@
 
 pub mod db_helpers;
 pub mod db_tests_impl;
+pub mod table_compat_tests_impl;

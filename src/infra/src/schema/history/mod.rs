@@ -30,7 +30,9 @@ pub fn connect() -> Box<dyn SchemaHistory> {
     match config::get_config().common.meta_store.as_str().into() {
         MetaStore::Sqlite => Box::<sqlite::SqliteSchemaHistory>::default(),
         MetaStore::Nats => Box::<sqlite::SqliteSchemaHistory>::default(),
-        MetaStore::MySQL | MetaStore::OceanBase => Box::<mysql::MysqlSchemaHistory>::default(),
+        MetaStore::MySQL | MetaStore::OceanBase | MetaStore::OceanBaseLegacy => {
+            Box::<mysql::MysqlSchemaHistory>::default()
+        }
         MetaStore::PostgreSQL => Box::<postgres::PostgresSchemaHistory>::default(),
     }
 }

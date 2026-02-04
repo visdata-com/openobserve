@@ -24,6 +24,7 @@ use once_cell::sync::Lazy;
 use crate::errors::Result;
 
 pub mod mysql;
+pub mod oceanbase;
 pub mod postgres;
 pub mod sqlite;
 
@@ -33,6 +34,9 @@ pub fn connect() -> Box<dyn PipelineTable> {
     match config::get_config().common.meta_store.as_str().into() {
         MetaStore::MySQL => Box::<mysql::MySqlPipelineTable>::default(),
         MetaStore::PostgreSQL => Box::<postgres::PostgresPipelineTable>::default(),
+        MetaStore::OceanBase | MetaStore::OceanBaseLegacy => {
+            Box::<oceanbase::OceanbasePipelineTable>::default()
+        }
         _ => Box::<sqlite::SqlitePipelineTable>::default(),
     }
 }

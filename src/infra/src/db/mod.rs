@@ -26,6 +26,7 @@ use crate::errors::{DbError, Error, Result};
 
 pub mod mysql;
 pub mod nats;
+pub mod oceanbase;
 pub mod postgres;
 pub mod sqlite;
 
@@ -44,7 +45,7 @@ pub static ORM_CLIENT_DDL: OnceCell<DatabaseConnection> = OnceCell::const_new();
 
 pub async fn connect_to_orm() -> DatabaseConnection {
     match get_config().common.meta_store.as_str().into() {
-        MetaStore::MySQL | MetaStore::OceanBase => {
+        MetaStore::MySQL | MetaStore::OceanBase | MetaStore::OceanBaseLegacy => {
             let pool = mysql::CLIENT.clone();
             SqlxMySqlConnector::from_sqlx_mysql_pool(pool)
         }
@@ -61,7 +62,7 @@ pub async fn connect_to_orm() -> DatabaseConnection {
 
 pub async fn connect_to_orm_ddl() -> DatabaseConnection {
     match get_config().common.meta_store.as_str().into() {
-        MetaStore::MySQL | MetaStore::OceanBase => {
+        MetaStore::MySQL | MetaStore::OceanBase | MetaStore::OceanBaseLegacy => {
             let pool = mysql::CLIENT_DDL.clone();
             SqlxMySqlConnector::from_sqlx_mysql_pool(pool)
         }
@@ -109,8 +110,12 @@ async fn default() -> Box<dyn Db> {
     match cfg.common.meta_store.as_str().into() {
         MetaStore::Sqlite => Box::<sqlite::SqliteDb>::default(),
         MetaStore::Nats => Box::<nats::NatsDb>::default(),
-        MetaStore::MySQL | MetaStore::OceanBase => Box::<mysql::MysqlDb>::default(),
+        MetaStore::MySQL => Box::<mysql::MysqlDb>::default(),
+        MetaStore::OceanBase => Box::<oceanbase::OceanBaseDb>::default(),
         MetaStore::PostgreSQL => Box::<postgres::PostgresDb>::default(),
+        MetaStore::OceanBaseLegacy => {
+            Box::<oceanbase::OceanBaseDb>::new(oceanbase::OceanBaseDb::new_legacy())
+        }
     }
 }
 

@@ -1,0 +1,20 @@
+[
+  {
+    "id": "36xLTSDhTeatl5ijH4BTvVEATF9",
+    "org": "default",
+    "name": "tmpl-test1",
+    "is_default": true,
+    "type": "http",
+    "body": "[\n  {\n    \"labels\": {\n        \"alertname\": \"{alert_name}\",\n        \"stream\": \"{stream_name}\",\n        \"organization\": \"{org_name}\",\n        \"alerttype\": \"{alert_type}\",\n        \"severity\": \"critical\"\n    },\n    \"annotations\": {\n        \"timestamp\": \"{timestamp}\"\n    }\n  }\n]",
+    "title": null
+  },
+  {
+    "id": "36xnnK1VxfaCv1McLfroItMb8MS",
+    "org": "default",
+    "name": "tmpl-alert-mail",
+    "is_default": true,
+    "type": "email",
+    "body": "\"alertname\": \"{alert_name}\",\n\"stream\": \"{stream_name}\",\n\"organization\": \"{org_name}\",\n\"alerttype\": \"{alert_type}\",\n\"severity\": \"noraml\"\n\"timestamp\": \"{timestamp}\"",
+    "title": "alert from o2"
+  }
+]

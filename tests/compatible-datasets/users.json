@@ -1,0 +1,67 @@
+[
+  {
+    "id": "36vDBp4p4Aiv2xnrW4aSt8mrLJO",
+    "email": "shenqy@visdata.com",
+    "first_name": "Shen Qy",
+    "last_name": "",
+    "password": "$argon2d$v=16$m=2048,t=4,p=2$MzZ2REJwZDYxQjExRHdmc1BOeVltd2xSOHRG$mGjUdPWvYGX3NARycH1C9da2To4/pgQwoOPvaRXzCqw",
+    "salt": "36vDBpd61B11DwfsPNyYmwlR8tF",
+    "is_root": false,
+    "password_ext": "",
+    "user_type": 1,
+    "created_at": 1765878018934783,
+    "updated_at": 1765878018934783
+  },
+  {
+    "id": "36vDuLgO0pz68l4H8cWHzTqbgRz",
+    "email": "litengda@visdata.com",
+    "first_name": "TengDa",
+    "last_name": "Li",
+    "password": "$argon2d$v=16$m=2048,t=4,p=2$MzZ2RHVNNTE1dE9WRlZRbjBBWGNqbFhoVEhC$IcljZtFFVp5KhIuV86jOaV6/qol1lbrpRq8jaG022es",
+    "salt": "36vDuM515tOVFVQn0AXcjlXhTHB",
+    "is_root": false,
+    "password_ext": "$argon2d$v=16$m=2048,t=4,p=2$b3Blbm9ic2VydmU$YnZmvYOd/EzFq0CkrT15R8Pp7B4Z/qtbiRoZJI9kcIo",
+    "user_type": 0,
+    "created_at": 1765878372897165,
+    "updated_at": 1765878372897165
+  },
+  {
+    "id": "36xCeXsarVPfaBVA5azGBlkT3Gi",
+    "email": "litd@visdata.com",
+    "first_name": "Li TD",
+    "last_name": "",
+    "password": "$argon2d$v=16$m=2048,t=4,p=2$MzZ4Q2VUYmM4MFRBRG5hTHU4RkY4QWF2ZkVK$52a5nqaNS4Jkjhd+M1yRAfVAdPuLBnwJXRSdWj/yb0Q",
+    "salt": "36xCeTbc80TADnaLu8FF8AavfEJ",
+    "is_root": false,
+    "password_ext": "",
+    "user_type": 1,
+    "created_at": 1765938930718165,
+    "updated_at": 1765938930718165
+  },
+  {
+    "id": "3707YijeAPLcxD4KruFW97LI0p6",
+    "email": "yangf@visdata.com",
+    "first_name": "Fan",
+    "last_name": "Yang",
+    "password": "$argon2d$v=16$m=2048,t=4,p=2$MzcwN1lja0RVemZQTW0zczlndXUweGZOYVA3$cIa9pYo9YV1uKg2fGIEMAlIOk2+PrQxFsh7xjOzJz9o",
+    "salt": "3707YckDUzfPMm3s9guu0xfNaP7",
+    "is_root": false,
+    "password_ext": "$argon2d$v=16$m=2048,t=4,p=2$b3Blbm9ic2VydmU$YnZmvYOd/EzFq0CkrT15R8Pp7B4Z/qtbiRoZJI9kcIo",
+    "user_type": 0,
+    "created_at": 1766028183327268,
+    "updated_at": 1766028183327268
+  },
+  {
+    "id": "36uTGoeJXVK1hHfvCA888JA32Y2",
+    "email": "shenqiongyu@visdata.com",
+    "first_name": "root",
+    "last_name": "",
+    "password": "$argon2d$v=16$m=2048,t=4,p=2$MzZ1VEdubzBMcDJoNkpmS1RONnVlTmxtZU9r$6/T/mxgXsygwkL4u6Vz9kEqlRYCEUaz/jLPvZ/LFNxo",
+    "salt": "36uTGno0Lp2h6JfKTN6ueNlmeOk",
+    "is_root": true,
+    "password_ext": "$argon2d$v=16$m=2048,t=4,p=2$b3Blbm9ic2VydmU$Uq3X1nwNTKMaaXtCKJypTa753udFBm0zA7yHl0oTffA",
+    "user_type": 0,
+    "created_at": 1765855363504625,
+    "updated_at": 1766031194169275
+  }
+]

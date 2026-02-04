@@ -1,0 +1,42 @@
+[
+  {
+    "origin": "dashboard",
+    "origin_id": "7406893497065689088",
+    "org_name": "default",
+    "stream_name": "k8s_pod_cpu_usage",
+    "stream_type": "metrics",
+    "field_name": "k8s_namespace_name"
+  },
+  {
+    "origin": "dashboard",
+    "origin_id": "7406893497065689088",
+    "org_name": "default",
+    "stream_name": "k8s_pod_cpu_usage",
+    "stream_type": "metrics",
+    "field_name": "k8s_pod_name"
+  },
+  {
+    "origin": "dashboard",
+    "origin_id": "7406893725508456448",
+    "org_name": "default",
+    "stream_name": "k8s_pod_cpu_usage",
+    "stream_type": "metrics",
+    "field_name": "k8s_namespace_name"
+  },
+  {
+    "origin": "dashboard",
+    "origin_id": "7406894050508296192",
+    "org_name": "default",
+    "stream_name": "k8s_node_cpu_usage",
+    "stream_type": "metrics",
+    "field_name": "k8s_cluster"
+  },
+  {
+    "origin": "dashboard",
+    "origin_id": "7406894177490849792",
+    "org_name": "default",
+    "stream_name": "k8s_pod_cpu_usage",
+    "stream_type": "metrics",
+    "field_name": "k8s_namespace_name"
+  }
+]

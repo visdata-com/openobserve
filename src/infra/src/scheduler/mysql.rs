@@ -39,6 +39,104 @@ impl MySqlScheduler {
     pub fn new() -> Self {
         Self {}
     }
+
+    pub async fn pull_inner(
+        &self,
+        concurrency: i64,
+        now: i64,
+        report_max_time: i64,
+        alert_max_time: i64,
+    ) -> Result<Vec<Trigger>> {
+        let pool = CLIENT.clone();
+        let mut tx = pool.begin().await?;
+
+        DB_QUERY_NUMS
+            .with_label_values(&["select", "scheduled_jobs"])
+            .inc();
+        let job_ids: Vec<TriggerId> = match sqlx::query_as::<_, TriggerId>(
+            r#"SELECT id
+FROM scheduled_jobs
+WHERE status = ? AND next_run_at <= ? AND NOT (is_realtime = ? AND is_silenced = ?)
+ORDER BY next_run_at
+LIMIT ?;"#,
+        )
+        .bind(TriggerStatus::Waiting)
+        .bind(now)
+        .bind(true)
+        .bind(false)
+        .bind(concurrency)
+        .fetch_all(&mut *tx)
+        .await
+        {
+            Ok(ids) => ids,
+            Err(e) => {
+                if let Err(e2) = tx.rollback().await {
+                    log::error!("[SCHEDULER] rollback select jobs for update error: {e2}");
+                }
+                return Err(e.into());
+            }
+        };
+
+        log::debug!(
+            "scheduler pull: selected scheduled jobs for update: {}",
+            job_ids.len()
+        );
+        if job_ids.is_empty() {
+            if let Err(e) = tx.rollback().await {
+                log::error!("[SCHEDULER] rollback scheduler pull error: {e}");
+            }
+            return Ok(vec![]);
+        }
+
+        let job_ids: Vec<String> = job_ids.into_iter().map(|id| id.id.to_string()).collect();
+        DB_QUERY_NUMS
+            .with_label_values(&["update", "scheduled_jobs"])
+            .inc();
+        let query = format!(
+            "UPDATE scheduled_jobs
+SET status = ?, start_time = ?,
+    end_time = CASE
+        WHEN module = ? THEN ?
+        ELSE ?
+    END
+WHERE id IN ({});",
+            job_ids.join(",")
+        );
+        if let Err(e) = sqlx::query(&query)
+            .bind(TriggerStatus::Processing)
+            .bind(now)
+            .bind(TriggerModule::Report)
+            .bind(report_max_time)
+            .bind(alert_max_time)
+            .execute(&mut *tx)
+            .await
+        {
+            if let Err(e2) = tx.rollback().await {
+                log::error!("[MYSQL] rollback update scheduled jobs status error: {e2}");
+            }
+            return Err(e.into());
+        }
+
+        log::debug!("Update scheduled jobs for selected pull job ids");
+        if let Err(e) = tx.commit().await {
+            log::error!("[SCHEDULER] commit scheduler pull update error: {e}");
+            return Err(e.into());
+        }
+
+        let query = format!(
+            "SELECT * FROM scheduled_jobs WHERE id IN ({});",
+            job_ids.join(",")
+        );
+        let pool = CLIENT.clone();
+        DB_QUERY_NUMS
+            .with_label_values(&["select", "scheduled_jobs"])
+            .inc();
+        let jobs: Vec<Trigger> = sqlx::query_as::<_, Trigger>(query.as_str())
+            .fetch_all(&pool)
+            .await?;
+        log::debug!("Returning the pulled triggers: {}", jobs.len());
+        Ok(jobs)
+    }
 }
 
 impl Default for MySqlScheduler {
@@ -528,6 +626,7 @@ INSERT IGNORE INTO scheduled_jobs (org, module, module_key, is_realtime, is_sile
         alert_timeout: i64,
         report_timeout: i64,
     ) -> Result<Vec<Trigger>> {
+        // compute time windows then acquire a lock, delegate SQL work to pull_inner
         log::debug!("Start pulling scheduled_job");
         let now = now_micros();
         let report_max_time = now
@@ -576,130 +675,12 @@ INSERT IGNORE INTO scheduled_jobs (org, module, module_key, is_realtime, is_sile
             }
         };
 
-        let pool = CLIENT.clone();
-        let mut tx = match pool.begin().await {
-            Ok(tx) => tx,
-            Err(e) => {
-                if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                    log::error!("[SCHEDULER] unlock pull scheduled_jobs error: {e}");
-                }
-                if let Err(e) = lock_tx.commit().await {
-                    log::error!("[SCHEDULER] commit for unlock pull scheduled_jobs error: {e}");
-                }
-                return Err(e.into());
-            }
-        };
+        // call inner which performs SQL work inside its own transaction
+        let res = self
+            .pull_inner(concurrency, now, report_max_time, alert_max_time)
+            .await;
 
-        DB_QUERY_NUMS
-            .with_label_values(&["select", "scheduled_jobs"])
-            .inc();
-        let job_ids: Vec<TriggerId> = match sqlx::query_as::<_, TriggerId>(
-            r#"SELECT id
-FROM scheduled_jobs
-WHERE status = ? AND next_run_at <= ? AND NOT (is_realtime = ? AND is_silenced = ?)
-ORDER BY next_run_at
-LIMIT ?;
-            "#,
-        )
-        .bind(TriggerStatus::Waiting)
-        .bind(now)
-        .bind(true)
-        .bind(false)
-        .bind(concurrency)
-        .fetch_all(&mut *tx)
-        .await
-        {
-            Ok(ids) => ids,
-            Err(e) => {
-                if let Err(e) = tx.rollback().await {
-                    log::error!("[SCHEDULER] rollback select jobs for update error: {e}");
-                }
-                DB_QUERY_NUMS
-                    .with_label_values(&["release_lock", "scheduled_jobs"])
-                    .inc();
-                if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                    log::error!("[SCHEDULER] unlock pull scheduled_jobs error: {e}");
-                }
-                if let Err(e) = lock_tx.commit().await {
-                    log::error!("[SCHEDULER] commit for unlock pull scheduled_jobs error: {e}");
-                }
-                return Err(e.into());
-            }
-        };
-
-        log::debug!(
-            "scheduler pull: selected scheduled jobs for update: {}",
-            job_ids.len()
-        );
-        if job_ids.is_empty() {
-            if let Err(e) = tx.rollback().await {
-                log::error!("[SCHEDULER] rollback scheduler pull error: {e}");
-            }
-            DB_QUERY_NUMS
-                .with_label_values(&["release_lock", "scheduled_jobs"])
-                .inc();
-            if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                log::error!("[SCHEDULER] unlock pull scheduled_jobs error: {e}");
-            }
-            if let Err(e) = lock_tx.commit().await {
-                log::error!("[SCHEDULER] commit for unlock pull scheduled_jobs error: {e}");
-            }
-            return Ok(vec![]);
-        }
-
-        let job_ids: Vec<String> = job_ids.into_iter().map(|id| id.id.to_string()).collect();
-        DB_QUERY_NUMS
-            .with_label_values(&["update", "scheduled_jobs"])
-            .inc();
-        let query = format!(
-            "UPDATE scheduled_jobs
-SET status = ?, start_time = ?,
-    end_time = CASE
-        WHEN module = ? THEN ?
-        ELSE ?
-    END
-WHERE id IN ({});",
-            job_ids.join(",")
-        );
-        if let Err(e) = sqlx::query(&query)
-            .bind(TriggerStatus::Processing)
-            .bind(now)
-            .bind(TriggerModule::Report)
-            .bind(report_max_time)
-            .bind(alert_max_time)
-            .execute(&mut *tx)
-            .await
-        {
-            if let Err(e) = tx.rollback().await {
-                log::error!("[MYSQL] rollback update scheduled jobs status error: {e}");
-            }
-            DB_QUERY_NUMS
-                .with_label_values(&["release_lock", "scheduled_jobs"])
-                .inc();
-            if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                log::error!("[SCHEDULER] unlock pull scheduled_jobs error: {e}");
-            }
-            if let Err(e) = lock_tx.commit().await {
-                log::error!("[SCHEDULER] commit for unlock pull scheduled_jobs error: {e}");
-            }
-            return Err(e.into());
-        }
-
-        log::debug!("Update scheduled jobs for selected pull job ids");
-        if let Err(e) = tx.commit().await {
-            log::error!("[SCHEDULER] commit scheduler pull update error: {e}");
-            DB_QUERY_NUMS
-                .with_label_values(&["release_lock", "scheduled_jobs"])
-                .inc();
-            if let Err(e) = sqlx::query(&unlock_sql).execute(&mut *lock_tx).await {
-                log::error!("[SCHEDULER] unlock pull scheduled_jobs error: {e}");
-            }
-            if let Err(e) = lock_tx.commit().await {
-                log::error!("[SCHEDULER] commit for unlock pull scheduled_jobs error: {e}");
-            }
-            return Err(e.into());
-        }
-
+        // release lock
         DB_QUERY_NUMS
             .with_label_values(&["release_lock", "scheduled_jobs"])
             .inc();
@@ -710,19 +691,7 @@ WHERE id IN ({});",
             log::error!("[SCHEDULER] commit for unlock pull scheduled_jobs error: {e}");
         }
 
-        let query = format!(
-            "SELECT * FROM scheduled_jobs WHERE id IN ({});",
-            job_ids.join(",")
-        );
-        let pool = CLIENT.clone();
-        DB_QUERY_NUMS
-            .with_label_values(&["select", "scheduled_jobs"])
-            .inc();
-        let jobs: Vec<Trigger> = sqlx::query_as::<_, Trigger>(query.as_str())
-            .fetch_all(&pool)
-            .await?;
-        log::debug!("Returning the pulled triggers: {}", jobs.len());
-        Ok(jobs)
+        res
     }
 
     async fn get(&self, org: &str, module: TriggerModule, key: &str) -> Result<Trigger> {

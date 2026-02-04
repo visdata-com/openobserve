@@ -163,3 +163,28 @@ pub async fn clear() -> Result<(), errors::Error> {
 pub async fn is_empty() -> Result<bool, errors::Error> {
     Ok(len().await? == 0)
 }
+
+#[cfg(test)]
+mod sql_gen_tests {
+    use sea_orm::{
+        DatabaseBackend, Schema,
+        sea_query::{MysqlQueryBuilder, PostgresQueryBuilder},
+    };
+
+    use crate::table::entity::system_prompts::Entity;
+
+    #[test]
+    fn print_system_prompts_create_table_sql() {
+        // MySQL
+        let schema = Schema::new(DatabaseBackend::MySql);
+        let stmt = schema.create_table_from_entity(Entity);
+        println!("\n========== MySQL CREATE TABLE SQL ==========");
+        println!("{}", stmt.to_string(MysqlQueryBuilder));
+
+        // PostgreSQL
+        let schema = Schema::new(DatabaseBackend::Postgres);
+        let stmt = schema.create_table_from_entity(Entity);
+        println!("\n========== PostgreSQL CREATE TABLE SQL ==========");
+        println!("{}", stmt.to_string(PostgresQueryBuilder));
+    }
+}

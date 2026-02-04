@@ -1,0 +1,57 @@
+[
+  {
+    "id": 813602,
+    "account": "",
+    "org": "default",
+    "stream": "default/metrics/k8s_pod_memory_rss",
+    "date": "2026/01/27/00",
+    "file": "74220508837325209608b96.parquet",
+    "index_file": true,
+    "flattened": false,
+    "created_at": 1769558441971938
+  },
+  {
+    "id": 813958,
+    "account": "",
+    "org": "default",
+    "stream": "default/metrics/k8s_node_cpu_usage",
+    "date": "2026/01/28/00",
+    "file": "74220695151580446739efd.parquet",
+    "index_file": false,
+    "flattened": false,
+    "created_at": 1769562044384349
+  },
+  {
+    "id": 813959,
+    "account": "",
+    "org": "default",
+    "stream": "default/metrics/k8s_node_cpu_usage",
+    "date": "2026/01/28/00",
+    "file": "742206990272014336036b2.parquet",
+    "index_file": false,
+    "flattened": false,
+    "created_at": 1769562044384349
+  },
+  {
+    "id": 813960,
+    "account": "",
+    "org": "default",
+    "stream": "default/metrics/k8s_node_cpu_usage",
+    "date": "2026/01/28/00",
+    "file": "74220741511641989123328.parquet",
+    "index_file": false,
+    "flattened": false,
+    "created_at": 1769562044384349
+  },
+  {
+    "id": 813961,
+    "account": "",
+    "org": "default",
+    "stream": "default/metrics/k8s_node_cpu_usage",
+    "date": "2026/01/28/00",
+    "file": "7422074226993041408af8b.parquet",
+    "index_file": false,
+    "flattened": false,
+    "created_at": 1769562044384349
+  }
+]

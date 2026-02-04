@@ -1,0 +1,57 @@
+[
+  {
+    "id": 144124,
+    "org": "default",
+    "stream": "default/metrics/k8s_pod_memory_rss",
+    "offsets": 1769554800000000,
+    "status": 2,
+    "node": "",
+    "started_at": 1769558432063122,
+    "updated_at": 1769558442570439,
+    "dumped": true
+  },
+  {
+    "id": 144172,
+    "org": "default",
+    "stream": "default/metrics/system_processes_created",
+    "offsets": 1769558400000000,
+    "status": 2,
+    "node": "",
+    "started_at": 1769562039438189,
+    "updated_at": 1769562046010466,
+    "dumped": true
+  },
+  {
+    "id": 144151,
+    "org": "default",
+    "stream": "default/metrics/k8s_node_filesystem_capacity",
+    "offsets": 1769558400000000,
+    "status": 2,
+    "node": "",
+    "started_at": 1769562039438189,
+    "updated_at": 1769562046290077,
+    "dumped": true
+  },
+  {
+    "id": 124045,
+    "org": "default",
+    "stream": "default/metrics/claude_code_cost_usage",
+    "offsets": 1768953600000000,
+    "status": 0,
+    "node": "38S8OJJX0CndzpKjlCvIATGYulF",
+    "started_at": 1769540259459751,
+    "updated_at": 1769540259459751,
+    "dumped": false
+  },
+  {
+    "id": 144166,
+    "org": "default",
+    "stream": "default/metrics/system_memory_usage",
+    "offsets": 1769558400000000,
+    "status": 2,
+    "node": "",
+    "started_at": 1769562039438189,
+    "updated_at": 1769562046693406,
+    "dumped": true
+  }
+]

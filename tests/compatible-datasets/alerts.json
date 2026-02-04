@@ -1,0 +1,56 @@
+[
+  {
+    "id": "36xpJ0qnI9UmqzApRxHMs5pctfT",
+    "org": "default",
+    "folder_id": "36xpIzDRfoqfZ36Z3Cw9HtcvTt0",
+    "name": "altert1",
+    "stream_type": "metrics",
+    "stream_name": "k8s_node_filesystem_usage",
+    "is_real_time": false,
+    "destinations": [
+      "test1"
+    ],
+    "context_attributes": {},
+    "row_template": null,
+    "row_template_type": 0,
+    "description": null,
+    "enabled": false,
+    "tz_offset": 0,
+    "last_triggered_at": null,
+    "last_satisfied_at": null,
+    "query_type": 0,
+    "query_conditions": {
+      "or": [
+        {
+          "column": "value",
+          "ignore_case": false,
+          "operator": "<",
+          "value": "21474836480"
+        }
+      ]
+    },
+    "query_sql": null,
+    "query_promql": null,
+    "query_promql_condition": null,
+    "query_aggregation": null,
+    "query_vrl_function": null,
+    "query_search_event_type": null,
+    "query_multi_time_range": [],
+    "trigger_threshold_operator": ">=",
+    "trigger_period_seconds": 600,
+    "trigger_threshold_count": 3,
+    "trigger_frequency_type": 1,
+    "trigger_frequency_seconds": 3600,
+    "trigger_frequency_cron": null,
+    "trigger_frequency_cron_timezone": "UTC",
+    "trigger_silence_seconds": 600,
+    "trigger_tolerance_seconds": null,
+    "owner": "shenqiongyu@visdata.com",
+    "last_edited_by": "shenqiongyu@visdata.com",
+    "updated_at": 1766020364326949,
+    "align_time": true,
+    "dedup_enabled": false,
+    "dedup_time_window_minutes": null,
+    "dedup_config": null
+  }
+]

@@ -24,6 +24,8 @@ flamegraph.html
 /integration-tests
 /download/
 
+ob/
+obd/
 # web distribution
 /web/dist
 /web/.env

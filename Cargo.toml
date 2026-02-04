@@ -33,6 +33,9 @@ tokio-console = ["dep:console-subscriber"]
 # Database integration tests (requires real database instances)
 db-mysql-tests = []
 db-oceanbase-tests = []
+# OceanBase + NATS distributed lock tests (requires NATS server)
+# Depends on db-oceanbase-tests for RealOceanBaseInstance
+db-oceanbase-nats-tests = ["db-oceanbase-tests"]
 
 [profile.release]
 debug = false
@@ -202,7 +205,6 @@ base64 = "0.22"
 float-cmp = "0.10"
 rcgen = "0.14.4"
 # MySQL/OceanBase integration tests
-serial_test = "3.1"
 sqlx.workspace = true
 
 [workspace]
@@ -400,6 +402,11 @@ utoipa = { version = "5", features = ["actix_extras", "openapi_extensions"] }
 utoipa-swagger-ui = { version = "9", features = ["actix-web"] }
 uuid = { version = "1.18.1", features = ["v7"] }
 vector-enrichment = { version = "0.1.0", package = "enrichment", git = "https://github.com/openobserve/vector", branch = "v0.51" }
-vrl = { version = "0.28.1", features = ["arbitrary", "value", "compiler", "test"] }
+vrl = { version = "0.28.1", features = [
+    "arbitrary",
+    "value",
+    "compiler",
+    "test",
+] }
 zip = "6.0.0"
 zstd = "0.13"

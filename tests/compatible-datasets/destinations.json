@@ -1,0 +1,34 @@
+[
+  {
+    "id": "36xLKkpePTvmlCLeVW02ZGuOChz",
+    "org": "default",
+    "name": "o2-standard",
+    "module": "pipeline",
+    "template_id": null,
+    "type": {
+      "destination_type": "openobserve",
+      "headers": {
+        "Authorization": "Basic c2hlbnFpb25neXVAdmlzZGF0YS5jb206RDAwUnlENExlOEtwQVRmRA=="
+      },
+      "metadata": {},
+      "method": "post",
+      "output_format": "json",
+      "skip_tls_verify": false,
+      "url": "https://o2.rke.visdat.cn/api/default/dst-test1/_json"
+    }
+  },
+  {
+    "id": "36xnsq3H7SCLAMLXKRhLu70MaBm",
+    "org": "default",
+    "name": "test1",
+    "module": "alert",
+    "template_id": "36xnnK1VxfaCv1McLfroItMb8MS",
+    "type": {
+      "recipients": [
+        "shenqiongyu@visdata.com",
+        "litengda@visdata.com"
+      ],
+      "type": "email"
+    }
+  }
+]
